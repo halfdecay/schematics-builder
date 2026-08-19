@@ -642,6 +642,7 @@ function _buildAndSaveComposite() {
             scale:               comp.scale               ?? 1,
             // Full aperture/ray state — enough to reproduce identical ray drawing
             rayShape:            comp.rayShape            || 'collimated',
+            rayWidthMode:        comp.rayWidthMode        || 'projected',
             apertureRadius:      comp.apertureRadius      ?? 15,
             apertureCenterOffset: comp.apertureCenterOffset ?? 0,
             coneAngle:           comp.coneAngle           ?? 0,

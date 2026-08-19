@@ -35,6 +35,7 @@ function captureComponent(id, component) {
     isGrouped: component.isGrouped,
     groupMembers: [...component.groupMembers],
     rayShape: component.rayShape,
+    rayWidthMode: component.rayWidthMode,
     rayPolygonColor: component.rayPolygonColor,
     rayPolygonOpacity: component.rayPolygonOpacity,
     rayColorInheritFromParent: component.rayColorInheritFromParent,
@@ -89,6 +90,7 @@ function restoreComponent(snapshot) {
   component.flipY = !!snapshot.flipY;
   if (snapshot.upVector) component.upVector = clonePoint(snapshot.upVector);
   component.rayShape = snapshot.rayShape || 'collimated';
+  component.rayWidthMode = snapshot.rayWidthMode || 'projected';
   component.rayPolygonColor = snapshot.rayPolygonColor || component.rayPolygonColor;
   component.rayPolygonOpacity = snapshot.rayPolygonOpacity ?? component.rayPolygonOpacity;
   component.rayColorInheritFromParent = snapshot.rayColorInheritFromParent ?? component.rayColorInheritFromParent;

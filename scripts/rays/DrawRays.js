@@ -166,7 +166,7 @@ function updateApertureScaling(sourceId = null) {
                 rawParent?.isCompositeInstance &&
                 source.compositeInstanceId === rawParent.compositeInstanceId;
             const parent = sameInst ? rawParent : componentManager.getCompositeExitPort(rawParent);
-            applyApertureScaling(source, parent);
+            applyApertureScaling(source, parent, source.parent);
         }
         if (source) recursivelyUpdateChildrenApertures(source, getComponent);
         return;

@@ -97,6 +97,69 @@ function _createConnectionView(child, parentId) {
     return view;
 }
 
+function _getFixedConnectionPerpendicular(parent, child) {
+    const parentCenter = parent.getApertureCenterWorld();
+    const childCenter = child.getApertureCenterWorld();
+    const dx = childCenter.x - parentCenter.x;
+    const dy = childCenter.y - parentCenter.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-9) return null;
+
+    let x = -dy / length;
+    let y = dx / length;
+
+    // Preserve the component's upper/lower ordering so ray colors and the
+    // optional edge flip remain predictable when switching modes.
+    const radians = child.rotation * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const globalUpX = child.upVector.x * cos - child.upVector.y * sin;
+    const globalUpY = child.upVector.x * sin + child.upVector.y * cos;
+    if (globalUpX * x + globalUpY * y < 0) {
+        x = -x;
+        y = -y;
+    }
+    return { x, y };
+}
+
+function _createFixedApertureView(component, perpendicular) {
+    const view = Object.create(component);
+
+    view.getAperturePointsWorld = () => {
+        const center = component.getApertureCenterWorld();
+        const localCenter = component._getEffectiveApertureCenter();
+        return component._getAperturePoints().map(point => {
+            const offset = (point.x - localCenter.x) * component.upVector.x +
+                (point.y - localCenter.y) * component.upVector.y;
+            return {
+                x: center.x + perpendicular.x * offset,
+                y: center.y + perpendicular.y * offset
+            };
+        });
+    };
+
+    view.getApertureFullExtentWorld = () => {
+        const center = component.getApertureCenterWorld();
+        const radius = component.apertureRadius;
+        return [
+            { x: center.x + perpendicular.x * radius, y: center.y + perpendicular.y * radius },
+            { x: center.x - perpendicular.x * radius, y: center.y - perpendicular.y * radius }
+        ];
+    };
+
+    return view;
+}
+
+function _createRayGeometryViews(parent, child) {
+    if (child.rayWidthMode !== 'fixed') return { parent, child };
+    const perpendicular = _getFixedConnectionPerpendicular(parent, child);
+    if (!perpendicular) return { parent, child };
+    return {
+        parent: _createFixedApertureView(parent, perpendicular),
+        child: _createFixedApertureView(child, perpendicular)
+    };
+}
+
 /**
  * Determine which polygon(s) to draw for a parent-child connection.
  * Returns an array of SVG polygon elements.
@@ -107,6 +170,7 @@ function _createConnectionView(child, parentId) {
  * Exported so the composite preview dialog can reuse identical ray geometry.
  */
 export function getPolygonsForConnection(parent, child, gradientId = null) {
+    ({ parent, child } = _createRayGeometryViews(parent, child));
     const polygons = [];
     
     switch (child.rayShape) {
@@ -405,10 +469,12 @@ function _createGradientDef(defs, parent, child, connectionIndex = 0) {
     const upPerpY = dot >= 0 ? rawPerpY : -rawPerpY;
 
     // Half-extent = max of parent and child aperture projections onto perpendicular
-    const projections = calculateProjections(child, parent);
-    const halfExtent = projections
-        ? Math.max(projections.parent.apertureProjection, projections.child.apertureProjection)
-        : child.apertureRadius;
+    const projections = child.rayWidthMode === 'fixed' ? null : calculateProjections(child, parent);
+    const halfExtent = child.rayWidthMode === 'fixed'
+        ? Math.max(parent.apertureRadius, child.apertureRadius)
+        : (projections
+            ? Math.max(projections.parent.apertureProjection, projections.child.apertureProjection)
+            : child.apertureRadius);
     if (halfExtent < 1e-6) return null;
 
     // Gradient center at child aperture center (accounts for apertureCenterOffset)

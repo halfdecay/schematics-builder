@@ -41,7 +41,7 @@ let currentParentId = null;
 
 const CONNECTION_FIELDS = new Set([
   'rayShape', 'rayPolygonColor', 'rayPolygonOpacity', 'rayColorInheritFromParent',
-  'rayGradientEnabled', 'rayPolygonColor2', 'rayFlip', 'apertureRadius',
+  'rayGradientEnabled', 'rayPolygonColor2', 'rayFlip', 'rayWidthMode', 'apertureRadius',
   'apertureCenterOffset', 'arraySegments', 'arraySizeRatio', 'arrayPositionRatio', 'coneAngle'
 ]);
 
@@ -89,6 +89,7 @@ function buildPanelHTML(comp) {
   const inheritColor = comp.rayColorInheritFromParent ?? true;
   const gradientEnabled = comp.rayGradientEnabled ?? false;
   const rayFlip = comp.rayFlip ?? false;
+  const widthMode = comp.rayWidthMode ?? 'projected';
   // Non-entry composite members have all ray controls locked in the UI;
   // only the entry port may be edited. Ray propagation still flows normally.
   const compLocked = comp.isCompositeInstance && !comp.isEntryPort;
@@ -101,7 +102,7 @@ function buildPanelHTML(comp) {
   //   - array: user-adjustable (not auto-scaled)
   const parentComp = (comp.parent != null) ? componentManager.getComponent(comp.parent) : null;
   const divergentParentControlled = shape === 'divergent' && parentComp && parentComp.coneAngle;
-  const radiusDisabled = compLocked || (!!parentComp && (shape === 'collimated' || divergentParentControlled));
+  const radiusDisabled = compLocked || (widthMode !== 'fixed' && !!parentComp && (shape === 'collimated' || divergentParentControlled));
   const connectionIds = currentBaseComponent?.getParentIds?.() || [];
   const connectionOptions = connectionIds.map(parentId => {
     const parent = componentManager.getComponent(parentId);
@@ -151,6 +152,13 @@ function buildPanelHTML(comp) {
           <input type="checkbox" id="rp-ray-flip" ${rayFlip ? 'checked' : ''}${compLocked ? ' disabled' : ''}>
           Flip ray edges
         </label>
+      </div>
+      <div class="rp-field">
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}" for="rp-width-mode">Ray Width</label>
+        <select id="rp-width-mode" class="rp-select"${compLocked ? ' disabled' : ''}>
+          <option value="projected" ${widthMode === 'projected' ? 'selected' : ''}>Projected aperture</option>
+          <option value="fixed" ${widthMode === 'fixed' ? 'selected' : ''}>Fixed aperture radius</option>
+        </select>
       </div>
     </div>
 
@@ -336,10 +344,13 @@ function wireEvents(body) {
       const parentComp = (currentComponent.parent != null)
         ? componentManager.getComponent(currentComponent.parent) : null;
       const divergentParentControlled = newShape === 'divergent' && parentComp && parentComp.coneAngle;
-      const radiusDisabled = !!parentComp && (newShape === 'collimated' || divergentParentControlled);
+      const radiusDisabled = currentComponent.rayWidthMode !== 'fixed' && !!parentComp &&
+        (newShape === 'collimated' || divergentParentControlled);
       const radiusSlider = get('rp-radius');
+      const radiusNumber = get('rp-radius-number');
       const radiusLabel  = radiusSlider?.closest('.rp-field')?.querySelector('.rp-label');
-      radiusSlider.disabled = radiusDisabled;
+      if (radiusSlider) radiusSlider.disabled = radiusDisabled;
+      if (radiusNumber) radiusNumber.disabled = radiusDisabled;
       if (radiusLabel) radiusLabel.classList.toggle('rp-label-disabled', radiusDisabled);
 
       apply();
@@ -350,6 +361,30 @@ function wireEvents(body) {
     actionHistory.run('Flip ray edges', 'ray-flip', () => {
       if (!currentComponent) return;
       currentComponent.rayFlip = e.target.checked;
+      apply();
+    });
+  });
+
+  get('rp-width-mode').addEventListener('change', e => {
+    actionHistory.run('Change ray width mode', 'ray-width-mode', () => {
+      if (!currentComponent) return;
+      currentComponent.rayWidthMode = e.target.value === 'fixed' ? 'fixed' : 'projected';
+      if (currentParentId == null || currentBaseComponent?.parent === currentParentId) {
+        currentBaseComponent.rayWidthMode = currentComponent.rayWidthMode;
+      }
+
+      const radiusSlider = get('rp-radius');
+      const radiusNumber = get('rp-radius-number');
+      const radiusLabel = radiusSlider?.closest('.rp-field')?.querySelector('.rp-label');
+      const parentComp = currentComponent.parent != null
+        ? componentManager.getComponent(currentComponent.parent)
+        : null;
+      const divergentParentControlled = currentComponent.rayShape === 'divergent' && parentComp && parentComp.coneAngle;
+      const radiusDisabled = currentComponent.rayWidthMode !== 'fixed' && !!parentComp &&
+        (currentComponent.rayShape === 'collimated' || divergentParentControlled);
+      if (radiusSlider) radiusSlider.disabled = radiusDisabled;
+      if (radiusNumber) radiusNumber.disabled = radiusDisabled;
+      if (radiusLabel) radiusLabel.classList.toggle('rp-label-disabled', radiusDisabled);
       apply();
     });
   });

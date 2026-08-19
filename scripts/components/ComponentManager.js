@@ -73,7 +73,7 @@ export class ComponentManager {
       }
 
       // Scale aperture to match parent projection at spawn time
-      applyApertureScaling(component, previousComponent);
+      applyApertureScaling(component, previousComponent, previousId);
     }
     
     
@@ -910,6 +910,7 @@ export class ComponentManager {
       // then use setters so _getAperturePoints() is always recomputed
       // with the correct shape, radius, offset, and array params.
       component.rayShape = member.rayShape ?? 'collimated';
+      component.rayWidthMode = member.rayWidthMode ?? 'projected';
       if (member.arraySegments != null) component.setArraySegments(member.arraySegments);
       if (member.arraySizeRatio != null) {
         component.setArraySizeRatio(member.arraySizeRatio);
