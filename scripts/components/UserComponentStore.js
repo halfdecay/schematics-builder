@@ -23,6 +23,7 @@
 import { components } from './ComponentLibrary.js';
 
 const STORAGE_KEY = 'userCompositeComponents';
+const BUNDLED_COMPONENT_URL = 'temp/polarization_user_components_new.json';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -76,6 +77,31 @@ export function loadUserComponents() {
     for (const def of defs) {
         components[def.key] = def;
     }
+}
+
+/**
+ * Load repository-shipped component packs. They behave like built-ins for
+ * every user and are deliberately not copied into localStorage.
+ */
+export async function loadBundledComponents() {
+    const response = await fetch(BUNDLED_COMPONENT_URL);
+    if (!response.ok) {
+        throw new Error(`Failed to load bundled components (${response.status}).`);
+    }
+    const payload = await response.json();
+    if (!payload || !Array.isArray(payload.components)) {
+        throw new Error('Bundled component file has an invalid format.');
+    }
+    for (const def of payload.components) {
+        if (!def || typeof def.key !== 'string' || def.isComposite !== true) continue;
+        components[def.key] = {
+            ...def,
+            category: 'Polarization Optics',
+            isBuiltIn: true,
+            isComposite: true
+        };
+    }
+    return payload.components.length;
 }
 
 /**

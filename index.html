@@ -89,7 +89,10 @@
            <button id="group-btn" class="tool-btn" title="Group"><span class="material-symbols-outlined">group</span></button>
            <button id="ungroup-btn" class="tool-btn" title="Ungroup"><span class="material-symbols-outlined">group_off</span></button>
            <button id="cut-link-btn" class="tool-btn" title="Remove current link"><span class="material-symbols-outlined">link_off</span></button>
-           <button id="re-link-btn" class="tool-btn" title="Re-link to a component"><span class="material-symbols-outlined">add_link</span></button>
+           <button id="re-link-btn" class="tool-btn" title="Add another ray link"><span class="material-symbols-outlined">add_link</span></button>
+           <button id="add-text-btn" class="tool-btn" title="Add text"><span class="material-symbols-outlined">text_fields</span></button>
+           <button id="align-horizontal-btn" class="tool-btn" title="Align centers horizontally"><span class="material-symbols-outlined">align_horizontal_center</span></button>
+           <button id="align-vertical-btn" class="tool-btn" title="Align centers vertically"><span class="material-symbols-outlined">align_vertical_center</span></button>
            <div class="tool-separator" id="save-composite-separator" style="display:none"></div>
            <button id="save-as-composite-btn" class="tool-btn" title="Save component" style="display:none"><span class="material-symbols-outlined"><span class="material-symbols-outlined">
 bookmark_star
@@ -140,6 +143,16 @@ bookmark_star
 
   <dialog id="save-composite-dialog">
     <!-- SaveCompositeDialog.js manages this dialog's content dynamically -->
+  </dialog>
+  <dialog id="text-dialog" class="text-dialog">
+    <form method="dialog">
+      <label for="text-dialog-input">Text</label>
+      <input id="text-dialog-input" type="text" maxlength="200" autocomplete="off">
+      <div class="text-dialog-actions">
+        <button value="cancel">Cancel</button>
+        <button value="confirm">OK</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- ray-menu-dialog removed: ray config is now in the right panel (#ray-panel) -->

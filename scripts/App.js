@@ -2,14 +2,14 @@ import { setupComponentButtons, setupActionButtons, updateToolbarButtons } from 
 import { setupComponentSelection, setupComponentDragging, setupCanvasPanning, setupCanvasZoom, setupSelectionBox } from './events/InteractionHandlers.js';
 import { refreshSidebarMenu } from './components/ComponentMenu.js';
 import { setupFileActions, setupFilenameEditor } from './Fileio.js';
-import { loadUserComponents } from './components/UserComponentStore.js';
+import { loadBundledComponents, loadUserComponents } from './components/UserComponentStore.js';
 import { openSaveCompositeDialog } from './components/SaveCompositeDialog.js';
 import { componentManager } from './components/index.js';
 import { initDebugLayer } from './utils/DebugLayer.js';
 import { setupRayMenu } from './rays/RayMenu.js';
 import './components/CompositeLibrary.js';
 
-export function initializeApp() {
+export async function initializeApp() {
   console.log('Initializing application...');
 
   const canvas = document.getElementById('canvas');
@@ -17,6 +17,11 @@ export function initializeApp() {
     throw new Error('Canvas element (#canvas) not found in HTML');
   }
 
+  try {
+    await loadBundledComponents(); // shared repository components, available to every user
+  } catch (error) {
+    console.error('[App] Bundled components were not loaded:', error);
+  }
   loadUserComponents();        // merge persisted user composites into registry before menu build
   refreshSidebarMenu();        // generate sidebar from ComponentLibrary definitions
   setupComponentButtons();     // wire click handlers onto the generated buttons

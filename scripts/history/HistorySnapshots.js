@@ -28,7 +28,10 @@ function captureComponent(id, component) {
     arrowVector: clonePoint(component.arrowVector),
     upVector: clonePoint(component.upVector),
     parent: component.parent,
+    additionalParents: [...(component.additionalParents || [])],
     children: [...component.children],
+    textContent: component.textContent,
+    fontSize: component.fontSize,
     isGrouped: component.isGrouped,
     groupMembers: [...component.groupMembers],
     rayShape: component.rayShape,
@@ -102,7 +105,10 @@ function restoreComponent(snapshot) {
   component.visible = snapshot.visible ?? true;
 
   component.parent = snapshot.parent;
+  component.additionalParents = [...(snapshot.additionalParents || [])];
   component.children = [...(snapshot.children || [])];
+  component.textContent = snapshot.textContent ?? component.textContent;
+  component.fontSize = snapshot.fontSize ?? component.fontSize;
   if (snapshot.isGrouped) {
     component.setGroupMembers(snapshot.groupMembers || []);
   } else {

@@ -69,6 +69,24 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export const components = {
 
+    'text-annotation': {
+        category: 'Misc', label: 'Text', isComposite: false, isBuiltIn: true,
+        localBounds: { minX: -50, maxX: 50, minY: -14, maxY: 8 },
+        centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
+        apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
+        apertureRadius: 0, coneAngle: 0, rayShape: 'manual',
+        draw: (ns) => {
+            const g = document.createElementNS(ns, 'g');
+            const text = document.createElementNS(ns, 'text');
+            text.setAttribute('x', '0'); text.setAttribute('y', '0');
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-family', 'Arial, sans-serif');
+            text.setAttribute('fill', '#111'); text.textContent = 'Text';
+            g.appendChild(text);
+            return g;
+        }
+    },
+
     // ── Lens ─────────────────────────────────────────────────────────────────
 
     objective: {

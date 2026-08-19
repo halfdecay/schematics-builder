@@ -42,9 +42,10 @@ export function drawApertureRays() {
 
     // Iterate through all components with parents
     componentManager.components.forEach((child, childKey) => {
-        if (child.parent === null) return;
-        
-        const rawParent = componentManager.getComponent(child.parent);
+      const parentIds = [child.parent, ...(child.additionalParents || [])]
+        .filter(id => id !== null);
+      parentIds.forEach((parentId, connectionIndex) => {
+        const rawParent = componentManager.getComponent(parentId);
         if (!rawParent) return;
         // Remap to the composite exit port only when the parent is a composite member
         // from a DIFFERENT instance than the child. Within the same composite, the
@@ -59,7 +60,7 @@ export function drawApertureRays() {
 
         // Create SVG gradient def if gradient mode is on; returns gradient ID or null
         const gradientId = child.rayGradientEnabled
-            ? _createGradientDef(defs, parent, child)
+            ? _createGradientDef(defs, parent, child, connectionIndex)
             : null;
         
         // Dispatch to appropriate rendering function based on child's ray shape
@@ -68,11 +69,13 @@ export function drawApertureRays() {
         
         polygons.forEach(polygon => {
             polygon.dataset.childId = childKey; // Map key (integer) matches selectedIds/children
+            polygon.dataset.parentId = parentId;
             rayGroup.appendChild(polygon);
             if (rayDisplayMode === 'both') {
                 _createEdgeLinesFromPolygon(polygon).forEach(line => rayGroup.appendChild(line));
             }
         });
+      });
     });
     
     // Insert aperture rays before trace-lines-group (or schematics) so traces appear on top of rays
@@ -358,8 +361,8 @@ function _colorToHSL(colorStr) {
  * and x2,y2 is the lower side → knob2 color.
  * Returns the gradient ID string, or null if the gradient cannot be computed.
  */
-function _createGradientDef(defs, parent, child) {
-    const gradientId = `ray-grad-${child.id}`;
+function _createGradientDef(defs, parent, child, connectionIndex = 0) {
+    const gradientId = `ray-grad-${child.id}-${connectionIndex}`;
 
     // Center-to-center direction
     const childCenter  = child.getCenterPointWorld();
@@ -547,4 +550,3 @@ export function toggleApertureRays() {
             break;
     }
 }
-

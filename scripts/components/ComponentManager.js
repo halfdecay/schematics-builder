@@ -47,7 +47,7 @@ export class ComponentManager {
     // Align new component's forward vector with the previously selected component's arrow vector
     const previousId = this.currentId;
     const previousComponent = this.components.get(previousId);
-    if (previousComponent) {
+    if (previousComponent && type !== 'text-annotation') {
       const arrowVector = previousComponent.getArrowVector();
       // Calculate angle from arrow vector
       const angle = Math.atan2(arrowVector.y, arrowVector.x) * 180 / Math.PI;
@@ -295,12 +295,17 @@ export class ComponentManager {
         }
       }
     }
+    (component.additionalParents || []).forEach(parentId => {
+      const parent = this.components.get(parentId);
+      if (parent) parent.children = parent.children.filter(childId => childId !== id);
+    });
 
     // Update children to have no parent
     component.children.forEach(childId => {
       const childComponent = this.components.get(childId);
       if (childComponent) {
-        childComponent.parent = null;
+        if (childComponent.parent === id) childComponent.parent = null;
+        childComponent.additionalParents = (childComponent.additionalParents || []).filter(parentId => parentId !== id);
       }
     });
 
@@ -636,6 +641,19 @@ export class ComponentManager {
         component.setPosition(pos.x + deltaX, pos.y + deltaY);
       }
     });
+  }
+
+  alignSelected(axis) {
+    const selected = this.getSelectedComponents();
+    if (selected.length < 2) return false;
+    const anchor = selected.find(({ id }) => id === this.currentId) || selected[0];
+    const target = axis === 'horizontal' ? anchor.component.y : anchor.component.x;
+    selected.forEach(({ component }) => {
+      if (axis === 'horizontal') component.setPosition(component.x, target);
+      else component.setPosition(target, component.y);
+    });
+    if (this.currentId != null) this.updateNextPositionFromComponent(this.currentId);
+    return true;
   }
 
   /**
@@ -1193,6 +1211,16 @@ export class ComponentManager {
       return false;
     }
     
+    if ((component.additionalParents || []).length > 0) {
+      const parentId = component.additionalParents.pop();
+      const parent = this.components.get(parentId);
+      if (parent && parentId !== component.parent) {
+        parent.children = parent.children.filter(childId => childId !== id);
+      }
+      updateToolbarButtons();
+      return true;
+    }
+
     if (component.parent === null) {
       console.log(`Component ${id} has no parent to remove`);
       return false;
@@ -1268,8 +1296,19 @@ export class ComponentManager {
     return true;
   }
 
+  addParentLink(childId, newParentId) {
+    const child = this.components.get(childId);
+    const parent = this.components.get(newParentId);
+    if (!child || !parent || this.wouldCreateCycle(childId, newParentId)) return false;
+    if (child.parent === newParentId || child.additionalParents.includes(newParentId)) return false;
+    if (child.parent === null) child.parent = newParentId;
+    else child.additionalParents.push(newParentId);
+    if (!parent.children.includes(childId)) parent.children.push(childId);
+    updateToolbarButtons();
+    return true;
+  }
+
 }
 
 // Create singleton instance
 export const componentManager = new ComponentManager();
-

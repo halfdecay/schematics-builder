@@ -32,10 +32,10 @@ export function drawTraceLines() {
     
     // Iterate through all components
     componentManager.components.forEach((component) => {
-        // Skip if this component has no parent
-        if (component.parent === null) return;
-        
-        const parentComponent = componentManager.getComponent(component.parent);
+      const parentIds = [component.parent, ...(component.additionalParents || [])]
+        .filter(id => id !== null);
+      parentIds.forEach(parentId => {
+        const parentComponent = componentManager.getComponent(parentId);
         if (!parentComponent) return;
         
         // Get aperture centers in world space
@@ -53,6 +53,7 @@ export function drawTraceLines() {
         traceLine.setAttribute("stroke-dasharray", "5,5");
         traceLine.setAttribute("pointer-events", "none");
         traceLinesGroup.appendChild(traceLine);
+      });
     });
 }
 

@@ -106,7 +106,11 @@ export class Component {
     
     // Parent-child relationships
     this.parent = null;
+    this.additionalParents = [];
     this.children = [];
+
+    this.textContent = config.textContent ?? '';
+    this.fontSize = config.fontSize ?? 18;
     
     // Group relationships for multi-selection grouping
     this.isGrouped = false;
@@ -272,6 +276,46 @@ export class Component {
   setArrayPositionRatio(ratio) {
     this.arrayPositionRatio = Math.max(0, ratio);
     this.aperturePoints = this._getAperturePoints();
+  }
+
+  setTextContent(value) {
+    this.textContent = String(value ?? '');
+    const text = this.shapeGroup?.querySelector('text');
+    if (text) this._renderAnnotationText(text);
+  }
+
+  _renderAnnotationText(textElement) {
+    const raw = this.textContent || 'Text';
+    textElement.replaceChildren();
+    const math = raw.match(/^\$(.+)\$$/);
+    if (!math) {
+      textElement.textContent = raw;
+      return;
+    }
+
+    const normalise = value => (value || '')
+      .replace(/\\ell\b/g, 'ℓ')
+      .replace(/\\lambda\b/g, 'λ')
+      .replace(/\\([A-Za-z]+)/g, '$1');
+    const parsed = math[1].match(/^(.*?)(?:\^\{([^}]*)\})?(?:_\{([^}]*)\})?$/);
+    if (!parsed) {
+      textElement.textContent = normalise(math[1]);
+      return;
+    }
+    const [, base, superscript, subscript] = parsed;
+    const addSpan = (value, shift = null) => {
+      if (!value) return;
+      const span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      span.textContent = normalise(value);
+      if (shift) {
+        span.setAttribute('baseline-shift', shift);
+        span.setAttribute('font-size', '70%');
+      }
+      textElement.appendChild(span);
+    };
+    addSpan(base);
+    addSpan(superscript, 'super');
+    addSpan(subscript, 'sub');
   }
 
   setArrowVector(x, y) {
@@ -462,6 +506,11 @@ export class Component {
     // Wrap shape in its own group for visibility control
     const shapeGroup = document.createElementNS(ns, 'g');
     const shape = this.drawFunction(ns);
+    if (this.type === 'text-annotation') {
+      const text = shape.querySelector('text') || shape;
+      text.setAttribute('font-size', this.fontSize);
+      this._renderAnnotationText(text);
+    }
     shapeGroup.appendChild(shape);
     group.appendChild(shapeGroup);
     this.shapeGroup = shapeGroup;

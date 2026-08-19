@@ -13,6 +13,13 @@ body, html {
   overflow: hidden;
 }
 
+.text-dialog { border: 0; border-radius: 8px; padding: 18px; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+.text-dialog::backdrop { background: rgba(0,0,0,.25); }
+.text-dialog form { display: grid; gap: 12px; min-width: 320px; }
+.text-dialog input { box-sizing: border-box; width: 100%; padding: 8px 10px; font: inherit; }
+.text-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.text-dialog-actions button { padding: 6px 14px; }
+
 /* Main Layout Structure */
 .main-layout {
   display: flex;
@@ -1629,4 +1636,3 @@ dialog.ray-menu-dialog::backdrop {
   background: #f0f0f0;
   color: #000;
 }
-

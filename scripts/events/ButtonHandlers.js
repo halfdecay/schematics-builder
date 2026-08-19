@@ -5,7 +5,7 @@ import {
 import { removeRotationHandle } from './RotationHandle.js';
 import { removeScaleHandle } from './ScaleHandle.js';
 import { removeArrowHandle } from './ArrowHandle.js';
-import { removeUnifiedBoundingBox } from './InteractionHandlers.js';
+import { showUnifiedBoundingBox, removeUnifiedBoundingBox } from './InteractionHandlers.js';
 import { canvas } from '../Canvas.js';
 import { updateRays } from '../rays/DrawRays.js';
 import { toggleApertureRays } from '../rays/ApertureRays.js';
@@ -107,9 +107,9 @@ export function updateToolbarButtons() {
     if (component && component.isExitPort && component.isCompositeInstance) {
       const entryId = componentManager.getCompositeEntryPortId(componentManager.currentId);
       const entryComp = entryId !== null ? componentManager.getComponent(entryId) : null;
-      canCutLink = entryComp && entryComp.parent !== null;
+      canCutLink = entryComp && (entryComp.parent !== null || entryComp.additionalParents.length > 0);
     } else {
-      canCutLink = component && component.parent !== null;
+      canCutLink = component && (component.parent !== null || component.additionalParents.length > 0);
     }
   }
   
@@ -126,7 +126,9 @@ export function updateToolbarButtons() {
     saveAsComposite: document.getElementById('save-as-composite-btn'),
     saveCompositeSep: document.getElementById('save-composite-separator'),
     cutLink: document.getElementById('cut-link-btn'),
-    reLink: document.getElementById('re-link-btn')
+    reLink: document.getElementById('re-link-btn'),
+    alignHorizontal: document.getElementById('align-horizontal-btn'),
+    alignVertical: document.getElementById('align-vertical-btn')
   };
   
   // Mode 1: Single component selection
@@ -143,6 +145,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, false);
     setButtonVisibility(buttons.cutLink, canCutLink);
     setButtonVisibility(buttons.reLink, true);
+    setButtonVisibility(buttons.alignHorizontal, false);
+    setButtonVisibility(buttons.alignVertical, false);
   }
   // Mode 2: Multiple selection, no focus
   else if (selectedCount > 1 && !hasFocus) {
@@ -158,6 +162,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, canSaveAsComposite);
     setButtonVisibility(buttons.cutLink, false);
     setButtonVisibility(buttons.reLink, false);
+    setButtonVisibility(buttons.alignHorizontal, true);
+    setButtonVisibility(buttons.alignVertical, true);
   }
   // Mode 3: Multiple selection, one focused
   else if (selectedCount > 1 && hasFocus) {
@@ -173,6 +179,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, canSaveAsComposite);
     setButtonVisibility(buttons.cutLink, canCutLink);
     setButtonVisibility(buttons.reLink, true);
+    setButtonVisibility(buttons.alignHorizontal, true);
+    setButtonVisibility(buttons.alignVertical, true);
   }
   // No selection
   else {
@@ -188,6 +196,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, false);
     setButtonVisibility(buttons.cutLink, false);
     setButtonVisibility(buttons.reLink, false);
+    setButtonVisibility(buttons.alignHorizontal, false);
+    setButtonVisibility(buttons.alignVertical, false);
   }
 }
 
@@ -234,6 +244,19 @@ function isTypingTarget(target) {
 function isSaveCompositeDialogOpen() {
   const dialog = document.getElementById('save-composite-dialog');
   return !!dialog && dialog.open;
+}
+
+function requestText(initialValue) {
+  const dialog = document.getElementById('text-dialog');
+  const input = document.getElementById('text-dialog-input');
+  if (!dialog || !input) return Promise.resolve(null);
+  input.value = initialValue;
+  dialog.showModal();
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+  return new Promise(resolve => dialog.addEventListener('close', () => {
+    const value = dialog.returnValue === 'confirm' ? input.value.trim() : '';
+    resolve(value || null);
+  }, { once: true }));
 }
 
 export function setupComponentButtons() {
@@ -310,6 +333,39 @@ export function setupActionButtons() {
   if (redoBtn) {
     redoBtn.addEventListener('click', () => actionHistory.redo());
   }
+
+  document.getElementById('add-text-btn')?.addEventListener('click', async () => {
+    const value = await requestText('Label');
+    if (!value) return;
+    actionHistory.run('Add text', 'add-text', () => {
+      const result = componentManager.addComponent('text-annotation');
+      if (!result) return;
+      result.component.setTextContent(value);
+      updateRays();
+    });
+  });
+
+  document.getElementById('canvas')?.addEventListener('dblclick', async event => {
+    const group = event.target.closest('g[data-id]');
+    if (!group) return;
+    const component = componentManager.getComponent(Number(group.dataset.id));
+    if (!component || component.type !== 'text-annotation') return;
+    event.stopPropagation();
+    const value = await requestText(component.textContent || 'Text');
+    if (!value || value === component.textContent) return;
+    actionHistory.run('Edit text', 'edit-text', () => {
+      component.setTextContent(value);
+    });
+  });
+
+  const align = axis => actionHistory.run(`Align ${axis}`, `align-${axis}`, () => {
+    if (componentManager.alignSelected(axis)) {
+      showUnifiedBoundingBox();
+      updateRays();
+    }
+  });
+  document.getElementById('align-horizontal-btn')?.addEventListener('click', () => align('horizontal'));
+  document.getElementById('align-vertical-btn')?.addEventListener('click', () => align('vertical'));
 
   // Reset canvas button
   const resetCanvasBtn = document.getElementById('reset-canvas-btn');
@@ -759,9 +815,9 @@ function handleRelinkClick(event) {
     
     // Try to change parent
     actionHistory.run('Re-link component', 'relink-component', () => {
-      if (componentManager.changeParent(relinkMode.childId, newParentId)) {
+      if (componentManager.addParentLink(relinkMode.childId, newParentId)) {
         updateRays();
-        console.log(`Successfully re-linked component ${relinkMode.childId} to parent ${newParentId}`);
+        console.log(`Added link from component ${newParentId} to ${relinkMode.childId}`);
       }
     });
   } else {
@@ -798,7 +854,9 @@ function getValidParentComponents(childId) {
 
   // All components except self, descendants, and composite siblings are valid
   componentManager.components.forEach((component, id) => {
-    if (id !== childId && !descendants.has(id) && !compositeSiblings.has(id)) {
+    const child = componentManager.getComponent(childId);
+    const alreadyLinked = child && (child.parent === id || child.additionalParents.includes(id));
+    if (id !== childId && !alreadyLinked && !descendants.has(id) && !compositeSiblings.has(id)) {
       validIds.add(id);
     }
   });
