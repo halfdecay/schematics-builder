@@ -683,6 +683,38 @@ export class ComponentManager {
     return true;
   }
 
+  /**
+   * Rotate a flat mirror so its local normal lies on the internal angle
+   * bisector of its two incoming ray directions.
+   */
+  alignMirrorToIncomingBisector(id) {
+    const mirror = this.components.get(id);
+    if (!mirror || mirror.type !== 'mirror') return false;
+
+    const parentIds = [...new Set(mirror.getParentIds())];
+    if (parentIds.length !== 2) return false;
+    const parents = parentIds.map(parentId => this.components.get(parentId));
+    if (parents.some(parent => !parent)) return false;
+
+    const mirrorPoint = mirror.getApertureCenterWorld();
+    const directions = parents.map(parent => {
+      const parentPoint = parent.getApertureCenterWorld();
+      const dx = parentPoint.x - mirrorPoint.x;
+      const dy = parentPoint.y - mirrorPoint.y;
+      const length = Math.hypot(dx, dy);
+      return length > 1e-9 ? { x: dx / length, y: dy / length } : null;
+    });
+    if (directions.some(direction => !direction)) return false;
+
+    const bisectorX = directions[0].x + directions[1].x;
+    const bisectorY = directions[0].y + directions[1].y;
+    if (Math.hypot(bisectorX, bisectorY) < 1e-9) return false;
+
+    const targetAngle = Math.atan2(bisectorY, bisectorX) * 180 / Math.PI;
+    const localNormalAngle = Math.atan2(mirror.forwardVector.y, mirror.forwardVector.x) * 180 / Math.PI;
+    return this.updateComponentRotation(id, targetAngle - localNormalAngle);
+  }
+
   getSelectedAlignmentUnits() {
     const units = [];
     const compositeUnits = new Map();

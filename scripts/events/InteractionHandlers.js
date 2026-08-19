@@ -169,6 +169,67 @@ export function getUnifiedBoundingBoxBounds() {
   return calculateUnifiedBounds(selectedComponents);
 }
 
+function getComponentId(component) {
+  if (!component) return null;
+  for (const [id, candidate] of componentManager.components) {
+    if (candidate === component) return id;
+  }
+  return null;
+}
+
+/** Refresh handles, focus and the properties panel after a selection change. */
+function refreshSelectionUi(preferredFocusId = null) {
+  removeRotationHandle();
+  removeScaleHandle();
+  removeArrowHandle();
+  removeUnifiedBoundingBox();
+  clearSelectionHoverBoxes();
+
+  const selectedIds = Array.from(componentManager.selectedIds);
+  if (selectedIds.length === 0) {
+    componentManager.currentId = null;
+    updateToolbarButtons();
+    if (ComponentManager.onSelectionChanged) ComponentManager.onSelectionChanged(null);
+    document.dispatchEvent(new CustomEvent('ray:selectionChanged'));
+    return;
+  }
+
+  let focusId = componentManager.selectedIds.has(preferredFocusId)
+    ? preferredFocusId
+    : (componentManager.selectedIds.has(componentManager.currentId) ? componentManager.currentId : selectedIds[0]);
+  const focusComponent = componentManager.getComponent(focusId);
+  const exitComponent = componentManager.getCompositeExitPort(focusComponent);
+  focusId = getComponentId(exitComponent) ?? focusId;
+
+  componentManager.currentId = focusId;
+  componentManager.updateNextPositionFromComponent(focusId);
+
+  if (selectedIds.length > 1) {
+    showUnifiedBoundingBox();
+    showGroupRotationHandle();
+    showGroupScaleHandle();
+  } else {
+    showRotationHandle(focusId);
+    showScaleHandle(focusId);
+  }
+  showArrowHandle(focusId);
+  updateToolbarButtons();
+
+  if (ComponentManager.onSelectionChanged) {
+    const selectedComponent = componentManager.getComponent(focusId);
+    ComponentManager.onSelectionChanged(componentManager.getCompositeEntryPort(selectedComponent ?? null));
+  }
+  document.dispatchEvent(new CustomEvent('ray:selectionChanged'));
+}
+
+function getSelectionUnitIds(id) {
+  const component = componentManager.getComponent(id);
+  if (!component) return new Set();
+  if (component.isCompositeInstance) return componentManager.getCompositeSiblingIds(id);
+  if (component.isGrouped) return new Set([id, ...component.groupMembers]);
+  return new Set([id]);
+}
+
 /**
  * Check if a point is within the unified bounding box
  */
@@ -284,17 +345,41 @@ export function setupComponentDragging() {
     const componentElement = e.target.closest('[data-id]');
     if (!componentElement) return;
 
+    const clickedId = parseInt(componentElement.getAttribute('data-id'));
+
+    // Ctrl+Click (Cmd+Click on macOS) toggles one logical selection unit.
+    // Modifier selection never starts a drag operation.
+    if (e.ctrlKey || e.metaKey) {
+      const unitIds = getSelectionUnitIds(clickedId);
+      const nextSelection = new Set(componentManager.selectedIds);
+      const shouldRemove = [...unitIds].every(id => nextSelection.has(id));
+      unitIds.forEach(id => {
+        if (shouldRemove) nextSelection.delete(id);
+        else nextSelection.add(id);
+      });
+      componentManager.selectMultiple(Array.from(nextSelection));
+      refreshSelectionUi(shouldRemove ? null : clickedId);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     isDragging = true;
     hasMoved = false;
-    draggedId = parseInt(componentElement.getAttribute('data-id'));
+    draggedId = clickedId;
     
     const component = componentManager.getComponent(draggedId);
     if (!component) return;
 
     actionHistory.begin('Move selection', 'move-components');
 
-    // Select the clicked component (and its group if it belongs to one)
-    componentManager.selectComponent(draggedId);
+    // Preserve an existing multi-selection when dragging one of its members.
+    // Clicking an object outside the selection still starts a new selection.
+    if (componentManager.selectedIds.size > 1 && componentManager.selectedIds.has(draggedId)) {
+      refreshSelectionUi(draggedId);
+    } else {
+      componentManager.selectComponent(draggedId);
+    }
     
     // Check if we have a multiple selection (group)
     if (componentManager.selectedIds.size > 1) {
