@@ -130,7 +130,9 @@ export function updateToolbarButtons() {
     cutLink: document.getElementById('cut-link-btn'),
     reLink: document.getElementById('re-link-btn'),
     alignHorizontal: document.getElementById('align-horizontal-btn'),
-    alignVertical: document.getElementById('align-vertical-btn')
+    alignVertical: document.getElementById('align-vertical-btn'),
+    alignDiagonalPositive: document.getElementById('align-diagonal-positive-btn'),
+    alignDiagonalNegative: document.getElementById('align-diagonal-negative-btn')
   };
   
   // Mode 1: Single component selection
@@ -150,6 +152,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, true);
     setButtonVisibility(buttons.alignHorizontal, false);
     setButtonVisibility(buttons.alignVertical, false);
+    setButtonVisibility(buttons.alignDiagonalPositive, false);
+    setButtonVisibility(buttons.alignDiagonalNegative, false);
   }
   // Mode 2: Multiple selection, no focus
   else if (selectedCount > 1 && !hasFocus) {
@@ -168,6 +172,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, false);
     setButtonVisibility(buttons.alignHorizontal, canAlign);
     setButtonVisibility(buttons.alignVertical, canAlign);
+    setButtonVisibility(buttons.alignDiagonalPositive, canAlign);
+    setButtonVisibility(buttons.alignDiagonalNegative, canAlign);
   }
   // Mode 3: Multiple selection, one focused
   else if (selectedCount > 1 && hasFocus) {
@@ -186,6 +192,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, true);
     setButtonVisibility(buttons.alignHorizontal, canAlign);
     setButtonVisibility(buttons.alignVertical, canAlign);
+    setButtonVisibility(buttons.alignDiagonalPositive, canAlign);
+    setButtonVisibility(buttons.alignDiagonalNegative, canAlign);
   }
   // No selection
   else {
@@ -204,6 +212,8 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, false);
     setButtonVisibility(buttons.alignHorizontal, false);
     setButtonVisibility(buttons.alignVertical, false);
+    setButtonVisibility(buttons.alignDiagonalPositive, false);
+    setButtonVisibility(buttons.alignDiagonalNegative, false);
   }
 }
 
@@ -424,6 +434,8 @@ export function setupActionButtons() {
   });
   document.getElementById('align-horizontal-btn')?.addEventListener('click', () => align('horizontal'));
   document.getElementById('align-vertical-btn')?.addEventListener('click', () => align('vertical'));
+  document.getElementById('align-diagonal-positive-btn')?.addEventListener('click', () => align('diagonal-positive'));
+  document.getElementById('align-diagonal-negative-btn')?.addEventListener('click', () => align('diagonal-negative'));
 
   // Reset canvas button
   const resetCanvasBtn = document.getElementById('reset-canvas-btn');

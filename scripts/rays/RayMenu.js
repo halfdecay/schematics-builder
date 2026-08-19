@@ -8,7 +8,8 @@ import { ComponentManager, componentManager } from '../components/ComponentManag
 import { updateRays } from './DrawRays.js';
 import { rebuildDebugForComponent } from '../utils/DebugLayer.js';
 import { APERTURE_RADIUS_STEP, APERTURE_OFFSET_STEP, ARRAY_SIZE_RATIO_STEP, ARRAY_POSITION_RATIO_STEP,
-         DEFAULT_SOLID_RAY_COLOR, DEFAULT_RAY_POLYGON_OPACITY } from '../config.js';
+         DEFAULT_SOLID_RAY_COLOR, DEFAULT_RAY_POLYGON_OPACITY, MIN_SCALE, MAX_SCALE,
+         SCALE_SNAP_INCREMENT } from '../config.js';
 import { actionHistory } from '../history/ActionHistory.js';
 
 /** Extract the 0-359 hue from either an HSL or 6-digit hex color string. */
@@ -70,7 +71,7 @@ function createRayEditor(component, parentId) {
 
 const EMPTY_HTML = `
   <div class="rp-empty">
-    <p>Select a component<br>to configure its rays</p>
+    <p>Select a component<br>to configure its properties</p>
   </div>
 `;
 
@@ -108,16 +109,26 @@ function buildPanelHTML(comp) {
     return `<option value="${parentId}" ${parentId === currentParentId ? 'selected' : ''}>${label}</option>`;
   }).join('');
   const rotation = currentBaseComponent?.rotation ?? 0;
+  const scale = currentBaseComponent?.scale ?? 1;
 
-  return `
-    ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
+  const objectSection = `
     <div class="rp-section">
       <div class="rp-section-title">Object</div>
       <div class="rp-field">
         <label class="rp-label" for="rp-rotation">Rotation (deg)</label>
         <input type="number" id="rp-rotation" class="rp-number" step="1" value="${rotation.toFixed(2)}">
       </div>
-    </div>
+      <div class="rp-field">
+        <label class="rp-label" for="rp-scale">Scale</label>
+        <input type="number" id="rp-scale" class="rp-number" min="${MIN_SCALE}" max="${MAX_SCALE}" step="${SCALE_SNAP_INCREMENT}" value="${scale.toFixed(2)}">
+      </div>
+    </div>`;
+
+  if (currentBaseComponent?.isAnnotation) return objectSection;
+
+  return `
+    ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
+    ${objectSection}
     <div class="rp-section">
       <div class="rp-section-title">Incoming Rays</div>
       ${connectionIds.length
@@ -260,6 +271,41 @@ function wireEvents(body) {
   });
   get('rp-rotation')?.addEventListener('change', () => commitControlHistory());
 
+  get('rp-scale')?.addEventListener('input', e => {
+    const requestedScale = parseFloat(e.target.value);
+    if (!currentBaseComponent || !Number.isFinite(requestedScale)) return;
+    beginControlHistory('Set object scale', 'object-scale');
+
+    const clampedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, requestedScale));
+    if (componentManager.selectedIds.size > 1) {
+      const ids = Array.from(componentManager.selectedIds);
+      const currentScale = currentBaseComponent.getScale();
+      if (currentScale <= 0) return;
+      const centroid = componentManager.getGroupCentroid(ids);
+      const states = componentManager.getGroupInitialStates(ids);
+      let scaleFactor = clampedScale / currentScale;
+      let minAllowedFactor = 0;
+      let maxAllowedFactor = Infinity;
+      states.forEach(state => {
+        minAllowedFactor = Math.max(minAllowedFactor, MIN_SCALE / state.scale);
+        maxAllowedFactor = Math.min(maxAllowedFactor, MAX_SCALE / state.scale);
+      });
+      scaleFactor = Math.max(minAllowedFactor, Math.min(maxAllowedFactor, scaleFactor));
+      componentManager.updateGroupScale(ids, centroid, scaleFactor, states);
+    } else {
+      const entry = [...componentManager.components.entries()].find(([, component]) => component === currentBaseComponent);
+      if (entry) componentManager.updateComponentScale(entry[0], clampedScale);
+    }
+
+    e.target.value = currentBaseComponent.getScale().toFixed(2);
+    updateRays();
+    rebuildDebugForComponent(currentBaseComponent);
+  });
+  get('rp-scale')?.addEventListener('change', e => {
+    if (currentBaseComponent) e.target.value = currentBaseComponent.getScale().toFixed(2);
+    commitControlHistory();
+  });
+
   const apply = () => {
     if (!currentComponent) return;
     updateRays();
@@ -273,6 +319,9 @@ function wireEvents(body) {
   const commitControlHistory = () => {
     if (!actionHistory.isApplyingHistory) actionHistory.commit();
   };
+
+  // Annotation components have object transforms but no optical-ray settings.
+  if (currentBaseComponent?.isAnnotation) return;
 
   get('rp-shape').addEventListener('change', e => {
     actionHistory.run('Change ray shape', 'ray-shape', () => {

@@ -47,7 +47,7 @@ export class ComponentManager {
     // Align new component's forward vector with the previously selected component's arrow vector
     const previousId = this.currentId;
     const previousComponent = this.components.get(previousId);
-    if (previousComponent && type !== 'text-annotation') {
+    if (previousComponent && !component.isAnnotation && !previousComponent.isAnnotation) {
       const arrowVector = previousComponent.getArrowVector();
       // Calculate angle from arrow vector
       const angle = Math.atan2(arrowVector.y, arrowVector.x) * 180 / Math.PI;
@@ -645,14 +645,35 @@ export class ComponentManager {
   }
 
   alignSelected(axis) {
+    const supportedAxes = new Set(['horizontal', 'vertical', 'diagonal-positive', 'diagonal-negative']);
+    if (!supportedAxes.has(axis)) return false;
+
     const units = this.getSelectedAlignmentUnits();
     if (units.length < 2) return false;
     const anchor = units.find(unit => unit.ids.includes(this.currentId)) || units[0];
-    const target = axis === 'horizontal' ? anchor.center.y : anchor.center.x;
 
     units.forEach(unit => {
-      const deltaX = axis === 'vertical' ? target - unit.center.x : 0;
-      const deltaY = axis === 'horizontal' ? target - unit.center.y : 0;
+      let deltaX = 0;
+      let deltaY = 0;
+
+      if (axis === 'horizontal') {
+        deltaY = anchor.center.y - unit.center.y;
+      } else if (axis === 'vertical') {
+        deltaX = anchor.center.x - unit.center.x;
+      } else {
+        const angle = axis === 'diagonal-positive' ? 45 : -45;
+        const radians = angle * Math.PI / 180;
+        const directionX = Math.cos(radians);
+        const directionY = Math.sin(radians);
+        const offsetX = unit.center.x - anchor.center.x;
+        const offsetY = unit.center.y - anchor.center.y;
+        const distanceAlongLine = offsetX * directionX + offsetY * directionY;
+        const projectedX = anchor.center.x + distanceAlongLine * directionX;
+        const projectedY = anchor.center.y + distanceAlongLine * directionY;
+        deltaX = projectedX - unit.center.x;
+        deltaY = projectedY - unit.center.y;
+      }
+
       unit.ids.forEach(id => {
         const component = this.components.get(id);
         if (component) component.setPosition(component.x + deltaX, component.y + deltaY);
