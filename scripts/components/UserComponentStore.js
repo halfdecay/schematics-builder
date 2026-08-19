@@ -24,6 +24,37 @@ import { components } from './ComponentLibrary.js';
 
 const STORAGE_KEY = 'userCompositeComponents';
 const BUNDLED_COMPONENT_URL = 'temp/polarization_user_components_new.json';
+const POLARIZATION_KEYS = new Set([
+    'user_quarter_wave_plate', 'user_half_wave_plate', 'user_linear_polarizer',
+    'user_variable_attenuator', 'user_glan_prism'
+]);
+
+function _normaliseSingleOpticalPlane(def) {
+    const copy = structuredClone(def);
+    if (!POLARIZATION_KEYS.has(copy.key) || !Array.isArray(copy.members)) return copy;
+    const entryIndex = copy.entryMemberIndex;
+    const exitIndex = copy.exitMemberIndex;
+    if (entryIndex === exitIndex || !copy.members[entryIndex] || !copy.members[exitIndex]) return copy;
+    if (copy.members[entryIndex].type !== 'plane' || copy.members[exitIndex].type !== 'plane') return copy;
+
+    // Keep the two original side planes as visible decoration, but disconnect
+    // them from the optical graph. A hidden plane at the geometric centre is
+    // the sole entry/exit port used by external rays.
+    copy.members[entryIndex].internalParentIndex = null;
+    copy.members[exitIndex].internalParentIndex = null;
+    const centralPort = {
+        ...structuredClone(copy.members[entryIndex]),
+        relX: 0,
+        relY: 0,
+        visible: false,
+        internalParentIndex: null
+    };
+    copy.members.push(centralPort);
+    const centralIndex = copy.members.length - 1;
+    copy.entryMemberIndex = centralIndex;
+    copy.exitMemberIndex = centralIndex;
+    return copy;
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -94,8 +125,9 @@ export async function loadBundledComponents() {
     }
     for (const def of payload.components) {
         if (!def || typeof def.key !== 'string' || def.isComposite !== true) continue;
+        const normalised = _normaliseSingleOpticalPlane(def);
         components[def.key] = {
-            ...def,
+            ...normalised,
             category: 'Polarization Optics',
             isBuiltIn: true,
             isComposite: true
@@ -176,13 +208,13 @@ export function importUserComponents(defs) {
             throw new Error(`User component at index ${index} must have a non-empty string key.`);
         }
 
-        return {
+        return _normaliseSingleOpticalPlane({
             ...def,
             key: def.key.trim(),
             category: def.category || 'User Components',
             isBuiltIn: false,
             isComposite: true
-        };
+        });
     });
 
     const merged = _readStore();
