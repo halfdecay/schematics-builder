@@ -73,6 +73,8 @@ export class Component {
     this.rayColorInheritFromParent = config.rayColorInheritFromParent ?? true;
     this.rayGradientEnabled = config.rayGradientEnabled ?? DEFAULT_RAY_GRADIENT_ENABLED;
     this.rayPolygonColor2 = config.rayPolygonColor2 || config.rayPolygonColor || DEFAULT_RAY_GRADIENT_COLOR2;
+    this.rayFlip = config.rayFlip ?? false;
+    this.rayConfigs = config.rayConfigs ? structuredClone(config.rayConfigs) : {};
 
     // Manual / Array aperture properties
     // apertureCenterOffset: signed displacement along upVector from the definition's
@@ -282,6 +284,33 @@ export class Component {
     this.textContent = String(value ?? '');
     const text = this.shapeGroup?.querySelector('text');
     if (text) this._renderAnnotationText(text);
+  }
+
+  getParentIds() {
+    return [this.parent, ...(this.additionalParents || [])].filter(id => id !== null);
+  }
+
+  getRayConfig(parentId) {
+    if (parentId === null || parentId === undefined) return null;
+    const key = String(parentId);
+    if (!this.rayConfigs[key]) {
+      this.rayConfigs[key] = {
+        rayShape: this.rayShape,
+        rayPolygonColor: this.rayPolygonColor,
+        rayPolygonOpacity: this.rayPolygonOpacity,
+        rayColorInheritFromParent: this.rayColorInheritFromParent,
+        rayGradientEnabled: this.rayGradientEnabled,
+        rayPolygonColor2: this.rayPolygonColor2,
+        rayFlip: this.rayFlip,
+        apertureRadius: this.apertureRadius,
+        apertureCenterOffset: this.apertureCenterOffset,
+        arraySegments: this.arraySegments,
+        arraySizeRatio: this.arraySizeRatio,
+        arrayPositionRatio: this.arrayPositionRatio,
+        coneAngle: this.coneAngle
+      };
+    }
+    return this.rayConfigs[key];
   }
 
   _renderAnnotationText(textElement) {

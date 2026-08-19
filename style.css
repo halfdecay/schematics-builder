@@ -1425,6 +1425,9 @@ input[type="range"].single-knob {
   border-color: #007acc;
 }
 
+.rp-number-compact { width: 58px; margin-left: 6px; padding: 3px 5px; }
+.rp-inline-inputs { display: inline-flex; gap: 4px; }
+
 /* Array section highlight */
 .rp-array-section {
   background: #dcdcdc;

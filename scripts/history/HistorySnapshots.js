@@ -40,6 +40,8 @@ function captureComponent(id, component) {
     rayColorInheritFromParent: component.rayColorInheritFromParent,
     rayGradientEnabled: component.rayGradientEnabled,
     rayPolygonColor2: component.rayPolygonColor2,
+    rayFlip: component.rayFlip,
+    rayConfigs: structuredClone(component.rayConfigs || {}),
     apertureRadius: component.apertureRadius,
     apertureCenterOffset: component.apertureCenterOffset,
     arraySegments: component.arraySegments,
@@ -92,6 +94,8 @@ function restoreComponent(snapshot) {
   component.rayColorInheritFromParent = snapshot.rayColorInheritFromParent ?? component.rayColorInheritFromParent;
   component.rayGradientEnabled = snapshot.rayGradientEnabled ?? component.rayGradientEnabled;
   component.rayPolygonColor2 = snapshot.rayPolygonColor2 || component.rayPolygonColor2;
+  component.rayFlip = snapshot.rayFlip ?? false;
+  component.rayConfigs = structuredClone(snapshot.rayConfigs || {});
   component.coneAngle = snapshot.coneAngle ?? 0;
   component.setArraySegments(snapshot.arraySegments ?? component.arraySegments);
   component.setArraySizeRatio(snapshot.arraySizeRatio ?? component.arraySizeRatio);

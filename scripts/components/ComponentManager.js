@@ -306,6 +306,7 @@ export class ComponentManager {
       if (childComponent) {
         if (childComponent.parent === id) childComponent.parent = null;
         childComponent.additionalParents = (childComponent.additionalParents || []).filter(parentId => parentId !== id);
+        delete childComponent.rayConfigs[String(id)];
       }
     });
 
@@ -644,16 +645,44 @@ export class ComponentManager {
   }
 
   alignSelected(axis) {
-    const selected = this.getSelectedComponents();
-    if (selected.length < 2) return false;
-    const anchor = selected.find(({ id }) => id === this.currentId) || selected[0];
-    const target = axis === 'horizontal' ? anchor.component.y : anchor.component.x;
-    selected.forEach(({ component }) => {
-      if (axis === 'horizontal') component.setPosition(component.x, target);
-      else component.setPosition(target, component.y);
+    const units = this.getSelectedAlignmentUnits();
+    if (units.length < 2) return false;
+    const anchor = units.find(unit => unit.ids.includes(this.currentId)) || units[0];
+    const target = axis === 'horizontal' ? anchor.center.y : anchor.center.x;
+
+    units.forEach(unit => {
+      const deltaX = axis === 'vertical' ? target - unit.center.x : 0;
+      const deltaY = axis === 'horizontal' ? target - unit.center.y : 0;
+      unit.ids.forEach(id => {
+        const component = this.components.get(id);
+        if (component) component.setPosition(component.x + deltaX, component.y + deltaY);
+      });
     });
     if (this.currentId != null) this.updateNextPositionFromComponent(this.currentId);
     return true;
+  }
+
+  getSelectedAlignmentUnits() {
+    const units = [];
+    const compositeUnits = new Map();
+
+    this.selectedIds.forEach(id => {
+      const component = this.components.get(id);
+      if (!component) return;
+      if (component.isCompositeInstance && component.compositeInstanceId != null) {
+        const key = component.compositeInstanceId;
+        if (!compositeUnits.has(key)) compositeUnits.set(key, []);
+        compositeUnits.get(key).push(id);
+      } else {
+        units.push({ ids: [id] });
+      }
+    });
+
+    compositeUnits.forEach(ids => units.push({ ids }));
+    return units.map(unit => ({
+      ...unit,
+      center: this.getGroupCentroid(unit.ids)
+    }));
   }
 
   /**
@@ -803,6 +832,7 @@ export class ComponentManager {
       component.rayColorInheritFromParent = member.rayColorInheritFromParent ?? true;
       component.rayGradientEnabled = member.rayGradientEnabled ?? false;
       component.rayPolygonColor2   = member.rayPolygonColor2  ?? component.rayPolygonColor;
+      component.rayFlip            = member.rayFlip ?? false;
       component.coneAngle         = member.coneAngle         ?? 0;
 
       // Restore upVector so aperturePoints orientation matches the saved layout.
@@ -1213,6 +1243,7 @@ export class ComponentManager {
     
     if ((component.additionalParents || []).length > 0) {
       const parentId = component.additionalParents.pop();
+      delete component.rayConfigs[String(parentId)];
       const parent = this.components.get(parentId);
       if (parent && parentId !== component.parent) {
         parent.children = parent.children.filter(childId => childId !== id);
@@ -1239,6 +1270,7 @@ export class ComponentManager {
     
     // Clear parent reference
     component.parent = null;
+    delete component.rayConfigs[String(parentId)];
     
     console.log(`Cut parent link: Component ${id} is no longer child of ${parentId}`);
     updateToolbarButtons(); // Update toolbar since parent status changed

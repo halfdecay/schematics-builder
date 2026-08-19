@@ -654,6 +654,7 @@ function _buildAndSaveComposite() {
             rayColorInheritFromParent:   comp.rayColorInheritFromParent   ?? true,
             rayPolygonColor2:            comp.rayPolygonColor2            || comp.rayPolygonColor || '#00ffff',
             rayGradientEnabled:          comp.rayGradientEnabled          ?? false,
+            rayFlip:                     comp.rayFlip                     ?? false,
             visible:                     comp.visible                     ?? true,
             internalParentIndex
         };

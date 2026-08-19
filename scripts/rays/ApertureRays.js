@@ -59,13 +59,14 @@ export function drawApertureRays() {
         if (!parent) return;
 
         // Create SVG gradient def if gradient mode is on; returns gradient ID or null
-        const gradientId = child.rayGradientEnabled
-            ? _createGradientDef(defs, parent, child, connectionIndex)
+        const rayChild = _createConnectionView(child, parentId);
+        const gradientId = rayChild.rayGradientEnabled
+            ? _createGradientDef(defs, parent, rayChild, connectionIndex)
             : null;
         
         // Dispatch to appropriate rendering function based on child's ray shape
         // and parent's ray shape (for array mode decision)
-        const polygons = getPolygonsForConnection(parent, child, gradientId);
+        const polygons = getPolygonsForConnection(parent, rayChild, gradientId);
         
         polygons.forEach(polygon => {
             polygon.dataset.childId = childKey; // Map key (integer) matches selectedIds/children
@@ -87,6 +88,13 @@ export function drawApertureRays() {
     } else {
         canvas.appendChild(rayGroup);
     }
+}
+
+function _createConnectionView(child, parentId) {
+    const view = Object.create(Object.getPrototypeOf(child));
+    Object.assign(view, child, child.getRayConfig(parentId));
+    view.aperturePoints = view._getAperturePoints();
+    return view;
 }
 
 /**
@@ -152,12 +160,22 @@ function _getParentExtentWorld(parent) {
     return { upper: pts[0], lower: pts[pts.length - 1] };
 }
 
+function _getChildPointsWorld(child) {
+    const points = child.getAperturePointsWorld();
+    return child.rayFlip ? [...points].reverse() : points;
+}
+
+function _getChildFullExtentWorld(child) {
+    const points = child.getApertureFullExtentWorld();
+    return child.rayFlip ? [...points].reverse() : points;
+}
+
 /**
  * Collimated: 4-vertex polygon [parentUpper, childUpper, childLower, parentLower]
  */
 function _createCollimatedPolygon(parent, child, gradientId = null) {
     const parentExtent = _getParentExtentWorld(parent);
-    const childPts = child.getAperturePointsWorld();
+    const childPts = _getChildPointsWorld(child);
     
     if (!parentExtent || !childPts || childPts.length < 2) {
         return null;
@@ -207,7 +225,7 @@ function _createDivergentPolygon(parent, child, gradientId = null) {
     }
 
     // Re-fetch aperture points after potential radius change
-    const childPts = child.getAperturePointsWorld();
+    const childPts = _getChildPointsWorld(child);
     if (!childPts || childPts.length < 2) return null;
 
     const childUpper = childPts[0];
@@ -276,7 +294,7 @@ function _createManualPolygon(parent, child, gradientId = null) {
 function _createArrayAsManualPolygon(parent, child, gradientId = null) {
     const parentPts = parent.getAperturePointsWorld();
     // Use full ±radius extent for the child (not sub-segment endpoints)
-    const childExtent = child.getApertureFullExtentWorld();
+    const childExtent = _getChildFullExtentWorld(child);
 
     if (!parentPts || parentPts.length < 2 || !childExtent) {
         return null;
@@ -301,7 +319,7 @@ function _createArrayAsManualPolygon(parent, child, gradientId = null) {
  */
 function _createArrayToArrayPolygons(parent, child, polygons, gradientId = null) {
     const parentPts = parent.getAperturePointsWorld();
-    const childPts = child.getAperturePointsWorld();
+    const childPts = _getChildPointsWorld(child);
     
     if (!parentPts || !childPts) return;
     

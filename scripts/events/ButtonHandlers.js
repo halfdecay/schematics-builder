@@ -13,7 +13,7 @@ import { toggleTraceLines } from '../rays/TraceLines.js';
 import { showRelinkHoverBoxes, removeRelinkHoverBoxes, removeHoverBox, clearSelectionHoverBoxes } from './HoverHandlers.js';
 import { LINK_ARROW_COLOR } from '../config.js';
 import { actionHistory } from '../history/ActionHistory.js';
-import { restoreSceneSnapshot } from '../history/HistorySnapshots.js';
+import { captureSceneSnapshot, restoreSceneSnapshot } from '../history/HistorySnapshots.js';
 
 /**
  * Update toolbar button visibility based on selection mode
@@ -25,6 +25,7 @@ export function updateToolbarButtons() {
   const selectedCount = componentManager.selectedIds.size;
   const hasFocus = componentManager.currentId !== null;
   const hasSelection = selectedCount > 0;
+  const canAlign = componentManager.getSelectedAlignmentUnits().length > 1;
   
   // --- Analyse selection for group / ungroup / composite toolbar logic ---
   //
@@ -116,6 +117,7 @@ export function updateToolbarButtons() {
   // Get all button elements
   const buttons = {
     delete: document.getElementById('delete-btn'),
+    duplicate: document.getElementById('duplicate-btn'),
     hide: document.getElementById('hide-component-btn'),
     show: document.getElementById('show-component-btn'),
     showAll: document.getElementById('show-all-components-btn'),
@@ -134,6 +136,7 @@ export function updateToolbarButtons() {
   // Mode 1: Single component selection
   if (selectedCount === 1 && hasFocus) {
     setButtonVisibility(buttons.delete, true);
+    setButtonVisibility(buttons.duplicate, true);
     setButtonVisibility(buttons.hide, true);
     setButtonVisibility(buttons.show, true);
     setButtonVisibility(buttons.showAll, true);
@@ -151,6 +154,7 @@ export function updateToolbarButtons() {
   // Mode 2: Multiple selection, no focus
   else if (selectedCount > 1 && !hasFocus) {
     setButtonVisibility(buttons.delete, true);
+    setButtonVisibility(buttons.duplicate, true);
     setButtonVisibility(buttons.hide, true);
     setButtonVisibility(buttons.show, true);
     setButtonVisibility(buttons.showAll, true);
@@ -162,12 +166,13 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, canSaveAsComposite);
     setButtonVisibility(buttons.cutLink, false);
     setButtonVisibility(buttons.reLink, false);
-    setButtonVisibility(buttons.alignHorizontal, true);
-    setButtonVisibility(buttons.alignVertical, true);
+    setButtonVisibility(buttons.alignHorizontal, canAlign);
+    setButtonVisibility(buttons.alignVertical, canAlign);
   }
   // Mode 3: Multiple selection, one focused
   else if (selectedCount > 1 && hasFocus) {
     setButtonVisibility(buttons.delete, true);
+    setButtonVisibility(buttons.duplicate, true);
     setButtonVisibility(buttons.hide, true);
     setButtonVisibility(buttons.show, true);
     setButtonVisibility(buttons.showAll, true);
@@ -179,12 +184,13 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.saveCompositeSep, canSaveAsComposite);
     setButtonVisibility(buttons.cutLink, canCutLink);
     setButtonVisibility(buttons.reLink, true);
-    setButtonVisibility(buttons.alignHorizontal, true);
-    setButtonVisibility(buttons.alignVertical, true);
+    setButtonVisibility(buttons.alignHorizontal, canAlign);
+    setButtonVisibility(buttons.alignVertical, canAlign);
   }
   // No selection
   else {
     setButtonVisibility(buttons.delete, false);
+    setButtonVisibility(buttons.duplicate, false);
     setButtonVisibility(buttons.hide, false);
     setButtonVisibility(buttons.show, false);
     setButtonVisibility(buttons.showAll, false);
@@ -291,6 +297,58 @@ function performDelete() {
   }
 }
 
+function performDuplicate() {
+  if (componentManager.selectedIds.size === 0) return;
+  actionHistory.run('Duplicate selection', 'duplicate-components', () => {
+    const snapshot = captureSceneSnapshot();
+    const selected = new Set(snapshot.selectedIds);
+    const originals = snapshot.components.filter(item => selected.has(item.mapId));
+    if (originals.length === 0) return;
+
+    const idMap = new Map();
+    originals.forEach(item => idMap.set(item.mapId, snapshot.idCounter++));
+    const compositeMap = new Map();
+    const copies = originals.map(item => {
+      const copy = structuredClone(item);
+      copy.mapId = idMap.get(item.mapId);
+      copy.componentId = `${item.componentId}-copy-${copy.mapId}`;
+      copy.x += 20;
+      copy.y += 20;
+      copy.parent = idMap.get(item.parent) ?? null;
+      copy.additionalParents = (item.additionalParents || [])
+        .filter(parentId => idMap.has(parentId))
+        .map(parentId => idMap.get(parentId));
+      copy.rayConfigs = {};
+      [item.parent, ...(item.additionalParents || [])].forEach(parentId => {
+        if (!idMap.has(parentId)) return;
+        const config = item.rayConfigs?.[String(parentId)];
+        if (config) copy.rayConfigs[String(idMap.get(parentId))] = structuredClone(config);
+      });
+      copy.children = (item.children || [])
+        .filter(childId => idMap.has(childId))
+        .map(childId => idMap.get(childId));
+      copy.groupMembers = (item.groupMembers || [])
+        .filter(memberId => idMap.has(memberId))
+        .map(memberId => idMap.get(memberId));
+      copy.isGrouped = copy.groupMembers.length > 0;
+      if (item.compositeInstanceId != null) {
+        if (!compositeMap.has(item.compositeInstanceId)) {
+          compositeMap.set(item.compositeInstanceId, ++snapshot.compositeInstanceCounter);
+        }
+        copy.compositeInstanceId = compositeMap.get(item.compositeInstanceId);
+      }
+      return copy;
+    });
+
+    snapshot.components.push(...copies);
+    snapshot.selectedIds = copies.map(item => item.mapId);
+    snapshot.currentId = idMap.get(snapshot.currentId) ?? snapshot.selectedIds[0] ?? null;
+    restoreSceneSnapshot(snapshot);
+    if (snapshot.currentId != null) componentManager.updateNextPositionFromComponent(snapshot.currentId);
+    updateToolbarButtons();
+  });
+}
+
 function performResetCanvas() {
   actionHistory.run('Reset canvas', 'reset-canvas', () => {
     if (relinkMode.active) {
@@ -379,20 +437,28 @@ export function setupActionButtons() {
     deleteBtn.addEventListener('click', performDelete);
   }
 
+  document.getElementById('duplicate-btn')?.addEventListener('click', performDuplicate);
+
   // Keyboard Delete / Backspace
   document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
+    const codeKey = e.code === 'KeyZ' ? 'z' : e.code === 'KeyY' ? 'y' : e.code === 'KeyD' ? 'd' : key;
     const mod = e.ctrlKey || e.metaKey;
 
     if (mod && isSaveCompositeDialogOpen() && !isTypingTarget(e.target)) {
-      if (key === 'z' || key === 'y') {
+      if (codeKey === 'z' || codeKey === 'y') {
         e.preventDefault();
         return;
       }
     }
 
     if (mod && !isTypingTarget(e.target)) {
-      if (key === 'z') {
+      if (codeKey === 'd') {
+        e.preventDefault();
+        performDuplicate();
+        return;
+      }
+      if (codeKey === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
           actionHistory.redo();
@@ -401,7 +467,7 @@ export function setupActionButtons() {
         }
         return;
       }
-      if (key === 'y') {
+      if (codeKey === 'y') {
         e.preventDefault();
         actionHistory.redo();
         return;

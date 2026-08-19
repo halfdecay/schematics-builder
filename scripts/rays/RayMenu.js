@@ -35,6 +35,36 @@ function _hueToRayColor(hue) {
 }
 
 let currentComponent = null;
+let currentBaseComponent = null;
+let currentParentId = null;
+
+const CONNECTION_FIELDS = new Set([
+  'rayShape', 'rayPolygonColor', 'rayPolygonOpacity', 'rayColorInheritFromParent',
+  'rayGradientEnabled', 'rayPolygonColor2', 'rayFlip', 'apertureRadius',
+  'apertureCenterOffset', 'arraySegments', 'arraySizeRatio', 'arrayPositionRatio', 'coneAngle'
+]);
+
+function createRayEditor(component, parentId) {
+  if (parentId == null) return component;
+  const config = component.getRayConfig(parentId);
+  return new Proxy(component, {
+    get(target, prop) {
+      if (CONNECTION_FIELDS.has(prop)) return config[prop];
+      if (prop === 'parent') return parentId;
+      if (prop === 'setRayShape') return value => { config.rayShape = value; };
+      if (prop === 'setApertureRadius') return value => { config.apertureRadius = value; };
+      if (prop === 'setApertureCenterOffset') return value => { config.apertureCenterOffset = value; };
+      if (prop === 'setArraySegments') return value => { config.arraySegments = Math.max(1, Math.min(10, Math.round(value))); };
+      if (prop === 'setArraySizeRatio') return value => { config.arraySizeRatio = Math.max(0, value); };
+      if (prop === 'setArrayPositionRatio') return value => { config.arrayPositionRatio = Math.max(0, value); };
+      return Reflect.get(target, prop, target);
+    },
+    set(target, prop, value) {
+      if (CONNECTION_FIELDS.has(prop)) { config[prop] = value; return true; }
+      return Reflect.set(target, prop, value, target);
+    }
+  });
+}
 
 // â”€â”€â”€ HTML template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -57,6 +87,7 @@ function buildPanelHTML(comp) {
   const positionRatio = comp.arrayPositionRatio ?? 1.0;
   const inheritColor = comp.rayColorInheritFromParent ?? true;
   const gradientEnabled = comp.rayGradientEnabled ?? false;
+  const rayFlip = comp.rayFlip ?? false;
   // Non-entry composite members have all ray controls locked in the UI;
   // only the entry port may be edited. Ray propagation still flows normally.
   const compLocked = comp.isCompositeInstance && !comp.isEntryPort;
@@ -70,9 +101,29 @@ function buildPanelHTML(comp) {
   const parentComp = (comp.parent != null) ? componentManager.getComponent(comp.parent) : null;
   const divergentParentControlled = shape === 'divergent' && parentComp && parentComp.coneAngle;
   const radiusDisabled = compLocked || (!!parentComp && (shape === 'collimated' || divergentParentControlled));
+  const connectionIds = currentBaseComponent?.getParentIds?.() || [];
+  const connectionOptions = connectionIds.map(parentId => {
+    const parent = componentManager.getComponent(parentId);
+    const label = parent ? `${parent.name} (#${parentId})` : `Component #${parentId}`;
+    return `<option value="${parentId}" ${parentId === currentParentId ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+  const rotation = currentBaseComponent?.rotation ?? 0;
 
   return `
     ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
+    <div class="rp-section">
+      <div class="rp-section-title">Object</div>
+      <div class="rp-field">
+        <label class="rp-label" for="rp-rotation">Rotation (deg)</label>
+        <input type="number" id="rp-rotation" class="rp-number" step="1" value="${rotation.toFixed(2)}">
+      </div>
+    </div>
+    <div class="rp-section">
+      <div class="rp-section-title">Incoming Rays</div>
+      ${connectionIds.length
+        ? `<select id="rp-connection" class="rp-select">${connectionOptions}</select>`
+        : '<div class="rp-empty-connection">No incoming ray connections</div>'}
+    </div>
     <div class="rp-section">
       <div class="rp-field">
         <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}" for="rp-shape">Ray Shape</label>
@@ -83,6 +134,12 @@ function buildPanelHTML(comp) {
           <option value="manual"     ${shape==='manual'    ?'selected':''}>Manual</option>
           <option value="array"      ${shape==='array'     ?'selected':''}>Array</option>
         </select>
+      </div>
+      <div class="rp-field rp-field-checkbox">
+        <label class="rp-checkbox-label${compLocked ? ' rp-label-disabled' : ''}" for="rp-ray-flip">
+          <input type="checkbox" id="rp-ray-flip" ${rayFlip ? 'checked' : ''}${compLocked ? ' disabled' : ''}>
+          Flip ray edges
+        </label>
       </div>
     </div>
 
@@ -103,7 +160,10 @@ function buildPanelHTML(comp) {
       <div class="rp-field">
         <div class="rp-hue-label-row">
           <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Color Hue</label>
-          <span class="rp-value" id="rp-hue-val">${gradientEnabled ? hue1 + '&#176; / ' + hue2 + '&#176;' : hue1 + '&#176;'}</span>
+          <span class="rp-inline-inputs">
+            <input type="number" id="rp-hue1-number" class="rp-number rp-number-compact" min="0" max="359" step="1" value="${hue1}"${compLocked ? ' disabled' : ''}>
+            <input type="number" id="rp-hue2-number" class="rp-number rp-number-compact" min="0" max="359" step="1" value="${hue2}" style="display:${gradientEnabled ? '' : 'none'}"${compLocked ? ' disabled' : ''}>
+          </span>
         </div>
         <div class="rp-hue-track" id="rp-hue-track"${compLocked ? ' style="pointer-events:none;opacity:0.5"' : ''}>
           <div class="rp-hue-knob active" id="rp-knob1"
@@ -114,7 +174,7 @@ function buildPanelHTML(comp) {
       </div>
 
       <div class="rp-field">
-        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Opacity <span class="rp-value" id="rp-opacity-val">${opacity.toFixed(2)}</span></label>
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Opacity <input type="number" id="rp-opacity-number" class="rp-number rp-number-compact" min="0" max="1" step="0.05" value="${opacity.toFixed(2)}"${compLocked ? ' disabled' : ''}></label>
         <input type="range" id="rp-opacity" class="rp-slider"
                min="0" max="1" step="0.05" value="${opacity}"${compLocked ? ' disabled' : ''}>
       </div>
@@ -122,13 +182,13 @@ function buildPanelHTML(comp) {
 
     <div class="rp-section">
       <div class="rp-field">
-        <label class="rp-label${radiusDisabled ? ' rp-label-disabled' : ''}">Aperture Radius <span class="rp-value" id="rp-radius-val">${radius}</span></label>
+        <label class="rp-label${radiusDisabled ? ' rp-label-disabled' : ''}">Aperture Radius <input type="number" id="rp-radius-number" class="rp-number rp-number-compact" min="0" max="200" step="${APERTURE_RADIUS_STEP}" value="${radius}"${radiusDisabled ? ' disabled' : ''}></label>
         <input type="range" id="rp-radius" class="rp-slider"
                min="0" max="200" step="${APERTURE_RADIUS_STEP}" value="${radius}"${radiusDisabled ? ' disabled' : ''}>
       </div>
 
       <div class="rp-field">
-        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Center Offset <span class="rp-value" id="rp-offset-val">${offset}</span></label>
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Center Offset <input type="number" id="rp-offset-number" class="rp-number rp-number-compact" min="-100" max="100" step="${APERTURE_OFFSET_STEP}" value="${offset}"${compLocked ? ' disabled' : ''}></label>
         <input type="range" id="rp-offset" class="rp-slider"
                min="-100" max="100" step="${APERTURE_OFFSET_STEP}" value="${offset}"${compLocked ? ' disabled' : ''}>
       </div>
@@ -142,12 +202,12 @@ function buildPanelHTML(comp) {
                min="1" max="10" step="1" value="${segments}"${compLocked ? ' disabled' : ''}>
       </div>
       <div class="rp-field">
-        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Size of sub-aperture <span class="rp-value" id="rp-size-ratio-val">${sizeRatio.toFixed(2)}</span></label>
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Size of sub-aperture <input type="number" id="rp-size-ratio-number" class="rp-number rp-number-compact" min="0" max="2" step="${ARRAY_SIZE_RATIO_STEP}" value="${sizeRatio.toFixed(2)}"${compLocked ? ' disabled' : ''}></label>
         <input type="range" id="rp-size-ratio" class="rp-slider"
                min="0" max="2" step="${ARRAY_SIZE_RATIO_STEP}" value="${sizeRatio}"${compLocked ? ' disabled' : ''}>
       </div>
       <div class="rp-field">
-        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Position of sub-aperture <span class="rp-value" id="rp-position-ratio-val">${positionRatio.toFixed(2)}</span></label>
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}">Position of sub-aperture <input type="number" id="rp-position-ratio-number" class="rp-number rp-number-compact" min="0" max="2" step="${ARRAY_POSITION_RATIO_STEP}" value="${positionRatio.toFixed(2)}"${compLocked ? ' disabled' : ''}></label>
         <input type="range" id="rp-position-ratio" class="rp-slider"
                min="0" max="2" step="${ARRAY_POSITION_RATIO_STEP}" value="${positionRatio}"${compLocked ? ' disabled' : ''}>
       </div>
@@ -175,10 +235,35 @@ function wireEvents(body) {
     slider.addEventListener('change', () => syncSliderProgress(slider));
   });
 
+  get('rp-connection')?.addEventListener('change', e => {
+    currentParentId = Number(e.target.value);
+    currentComponent = createRayEditor(currentBaseComponent, currentParentId);
+    body.innerHTML = buildPanelHTML(currentComponent);
+    wireEvents(body);
+  });
+
+  get('rp-rotation')?.addEventListener('input', e => {
+    const angle = parseFloat(e.target.value);
+    if (!currentBaseComponent || !Number.isFinite(angle)) return;
+    beginControlHistory('Set object rotation', 'object-rotation');
+    if (componentManager.selectedIds.size > 1) {
+      const ids = Array.from(componentManager.selectedIds);
+      const centroid = componentManager.getGroupCentroid(ids);
+      const states = componentManager.getGroupInitialStates(ids);
+      componentManager.updateGroupRotation(ids, centroid, angle - currentBaseComponent.rotation, states);
+    } else {
+      const entry = [...componentManager.components.entries()].find(([, component]) => component === currentBaseComponent);
+      if (entry) componentManager.updateComponentRotation(entry[0], angle);
+    }
+    updateRays();
+    rebuildDebugForComponent(currentBaseComponent);
+  });
+  get('rp-rotation')?.addEventListener('change', () => commitControlHistory());
+
   const apply = () => {
     if (!currentComponent) return;
     updateRays();
-    rebuildDebugForComponent(currentComponent);
+    rebuildDebugForComponent(currentBaseComponent || currentComponent);
   };
 
   const beginControlHistory = (label, type) => {
@@ -212,6 +297,14 @@ function wireEvents(body) {
     });
   });
 
+  get('rp-ray-flip').addEventListener('change', e => {
+    actionHistory.run('Flip ray edges', 'ray-flip', () => {
+      if (!currentComponent) return;
+      currentComponent.rayFlip = e.target.checked;
+      apply();
+    });
+  });
+
   get('rp-inherit-color').addEventListener('change', e => {
     actionHistory.run('Toggle color inheritance', 'ray-inherit-color', () => {
       if (!currentComponent) return;
@@ -235,6 +328,8 @@ function wireEvents(body) {
           const h2 = _colorToHue(inheritedColor2);
           if (knob1) knob1.style.left = `${(h1/359*100).toFixed(2)}%`;
           if (knob2) knob2.style.left = `${(h2/359*100).toFixed(2)}%`;
+          if (get('rp-hue1-number')) get('rp-hue1-number').value = h1;
+          if (get('rp-hue2-number')) get('rp-hue2-number').value = h2;
           if (knob2) knob2.style.display = inheritedGradient ? 'block' : 'none';
           const gradCb = get('rp-gradient');
           if (gradCb) gradCb.checked = inheritedGradient;
@@ -246,6 +341,7 @@ function wireEvents(body) {
             opSlider.value = inheritedOpacity;
             syncSliderProgress(opSlider);
             if (opVal) opVal.textContent = inheritedOpacity.toFixed(2);
+            if (get('rp-opacity-number')) get('rp-opacity-number').value = inheritedOpacity.toFixed(2);
           }
           propagateColor(currentComponent, inheritedColor, inheritedOpacity, inheritedGradient, inheritedColor2);
           apply();
@@ -310,6 +406,8 @@ function wireEvents(body) {
         if (!currentComponent) return;
         const hue = _clientXToHue(moveEvent.clientX);
         _setKnobHue(knobEl, hue, isKnob1);
+        const hueInput = get(isKnob1 ? 'rp-hue1-number' : 'rp-hue2-number');
+        if (hueInput) hueInput.value = hue;
         const color = `hsl(${hue}, 70%, 50%)`;
 
         untickInherit();
@@ -349,6 +447,25 @@ function wireEvents(body) {
   if (knob1El) _attachKnobDrag(knob1El, true);
   if (knob2El) _attachKnobDrag(knob2El, false);
 
+  const applyHueNumber = (isPrimary) => {
+    const input = get(isPrimary ? 'rp-hue1-number' : 'rp-hue2-number');
+    if (!input) return;
+    input.addEventListener('input', () => {
+      const hue = Math.max(0, Math.min(359, parseInt(input.value, 10) || 0));
+      beginControlHistory(isPrimary ? 'Set ray color' : 'Set gradient color', 'ray-color');
+      untickInherit();
+      const color = _hueToRayColor(hue);
+      if (isPrimary) currentComponent.rayPolygonColor = color;
+      else currentComponent.rayPolygonColor2 = color;
+      const knob = get(isPrimary ? 'rp-knob1' : 'rp-knob2');
+      if (knob) _setKnobHue(knob, hue, isPrimary);
+      apply();
+    });
+    input.addEventListener('change', commitControlHistory);
+  };
+  applyHueNumber(true);
+  applyHueNumber(false);
+
   // Gradient toggle
   const gradientCb = get('rp-gradient');
   if (gradientCb) {
@@ -367,6 +484,11 @@ function wireEvents(body) {
         }
         // Show/hide knob2
         if (knob2El) knob2El.style.display = enabled ? 'block' : 'none';
+        const hue2Input = get('rp-hue2-number');
+        if (hue2Input) {
+          hue2Input.style.display = enabled ? '' : 'none';
+          hue2Input.value = _colorToHue(currentComponent.rayPolygonColor2);
+        }
         // Update value label
         const hueVal = body.querySelector('#rp-hue-val');
         if (hueVal) {
@@ -385,7 +507,7 @@ function wireEvents(body) {
     beginControlHistory('Change ray opacity', 'ray-opacity');
     untickInherit();
     const v = parseFloat(e.target.value);
-    body.querySelector('#rp-opacity-val').textContent = v.toFixed(2);
+    get('rp-opacity-number').value = v.toFixed(2);
     currentComponent.rayPolygonOpacity = v;
     propagateColor(currentComponent, null, v, null, null);
     apply();
@@ -396,7 +518,7 @@ function wireEvents(body) {
     if (!currentComponent) return;
     beginControlHistory('Change aperture radius', 'aperture-radius');
     const v = parseFloat(e.target.value);
-    body.querySelector('#rp-radius-val').textContent = v;
+    get('rp-radius-number').value = v;
     currentComponent.setApertureRadius(v);
     apply();
   });
@@ -406,7 +528,7 @@ function wireEvents(body) {
     if (!currentComponent) return;
     beginControlHistory('Change aperture offset', 'aperture-offset');
     const v = parseFloat(e.target.value);
-    body.querySelector('#rp-offset-val').textContent = v;
+    get('rp-offset-number').value = v;
     currentComponent.setApertureCenterOffset(v);
     apply();
   });
@@ -424,7 +546,7 @@ function wireEvents(body) {
     if (!currentComponent) return;
     beginControlHistory('Change array size', 'array-size-ratio');
     const v = parseFloat(e.target.value);
-    body.querySelector('#rp-size-ratio-val').textContent = v.toFixed(2);
+    get('rp-size-ratio-number').value = v.toFixed(2);
     currentComponent.setArraySizeRatio(v);
     apply();
   });
@@ -434,11 +556,35 @@ function wireEvents(body) {
     if (!currentComponent) return;
     beginControlHistory('Change array position', 'array-position-ratio');
     const v = parseFloat(e.target.value);
-    body.querySelector('#rp-position-ratio-val').textContent = v.toFixed(2);
+    get('rp-position-ratio-number').value = v.toFixed(2);
     currentComponent.setArrayPositionRatio(v);
     apply();
   });
   get('rp-position-ratio').addEventListener('change', commitControlHistory);
+
+  const bindNumberToSlider = (numberId, sliderId, label, historyType, applyValue) => {
+    const number = get(numberId);
+    const slider = get(sliderId);
+    if (!number || !slider) return;
+    number.addEventListener('input', () => {
+      let value = parseFloat(number.value);
+      if (!Number.isFinite(value)) return;
+      value = Math.max(parseFloat(number.min), Math.min(parseFloat(number.max), value));
+      slider.value = value;
+      syncSliderProgress(slider);
+      beginControlHistory(label, historyType);
+      applyValue(value);
+      apply();
+    });
+    number.addEventListener('change', commitControlHistory);
+  };
+  bindNumberToSlider('rp-opacity-number', 'rp-opacity', 'Set ray opacity', 'ray-opacity', value => {
+    untickInherit(); currentComponent.rayPolygonOpacity = value;
+  });
+  bindNumberToSlider('rp-radius-number', 'rp-radius', 'Set aperture radius', 'aperture-radius', value => currentComponent.setApertureRadius(value));
+  bindNumberToSlider('rp-offset-number', 'rp-offset', 'Set aperture offset', 'aperture-offset', value => currentComponent.setApertureCenterOffset(value));
+  bindNumberToSlider('rp-size-ratio-number', 'rp-size-ratio', 'Set array size', 'array-size-ratio', value => currentComponent.setArraySizeRatio(value));
+  bindNumberToSlider('rp-position-ratio-number', 'rp-position-ratio', 'Set array position', 'array-position-ratio', value => currentComponent.setArrayPositionRatio(value));
 }
 
 // â”€â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -453,12 +599,17 @@ export function setupRayMenu() {
   body.innerHTML = EMPTY_HTML;
 
   ComponentManager.onSelectionChanged = (component) => {
-    currentComponent = component;
+    currentBaseComponent = component;
     if (!component) {
+      currentComponent = null;
+      currentParentId = null;
       body.innerHTML = EMPTY_HTML;
       return;
     }
-    body.innerHTML = buildPanelHTML(component);
+    const parentIds = component.getParentIds();
+    currentParentId = parentIds.includes(currentParentId) ? currentParentId : (parentIds[0] ?? null);
+    currentComponent = createRayEditor(component, currentParentId);
+    body.innerHTML = buildPanelHTML(currentComponent);
     wireEvents(body);
   };
 }
