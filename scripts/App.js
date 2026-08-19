@@ -17,12 +17,14 @@ export async function initializeApp() {
     throw new Error('Canvas element (#canvas) not found in HTML');
   }
 
+  // Load personal definitions first. Repository-shipped definitions load last
+  // so stale localStorage copies with the same keys cannot shadow built-ins.
+  loadUserComponents();
   try {
-    await loadBundledComponents(); // shared repository components, available to every user
+    await loadBundledComponents();
   } catch (error) {
     console.error('[App] Bundled components were not loaded:', error);
   }
-  loadUserComponents();        // merge persisted user composites into registry before menu build
   refreshSidebarMenu();        // generate sidebar from ComponentLibrary definitions
   setupComponentButtons();     // wire click handlers onto the generated buttons
   setupActionButtons();
