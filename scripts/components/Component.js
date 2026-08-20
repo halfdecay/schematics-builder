@@ -39,6 +39,8 @@ export class Component {
         apertureRadius: definition.apertureRadius,
         coneAngle: definition.coneAngle,
         rayShape: definition.rayShape,
+        rayWidthMode: definition.rayWidthMode,
+        isAnnotation: definition.isAnnotation === true,
         drawFunction: definition.draw
       };
       
@@ -68,6 +70,8 @@ export class Component {
     this.apertureRadius = config.apertureRadius ?? 15;
     this.coneAngle = config.coneAngle ?? 0;
     this.rayShape = config.rayShape || 'collimated';
+    this.rayWidthMode = config.rayWidthMode || 'projected';
+    this.isAnnotation = config.isAnnotation === true;
     this.rayPolygonColor = config.rayPolygonColor || DEFAULT_SOLID_RAY_COLOR;
     this.rayPolygonOpacity = config.rayPolygonOpacity ?? DEFAULT_RAY_POLYGON_OPACITY;
     this.rayColorInheritFromParent = config.rayColorInheritFromParent ?? true;
@@ -296,6 +300,7 @@ export class Component {
     if (!this.rayConfigs[key]) {
       this.rayConfigs[key] = {
         rayShape: this.rayShape,
+        rayWidthMode: this.rayWidthMode,
         rayPolygonColor: this.rayPolygonColor,
         rayPolygonOpacity: this.rayPolygonOpacity,
         rayColorInheritFromParent: this.rayColorInheritFromParent,
@@ -487,6 +492,7 @@ export class Component {
       aperturePoints: this._getAperturePoints(),
       coneAngle: this.coneAngle,
       rayShape: this.rayShape,
+      rayWidthMode: this.rayWidthMode,
       arraySegments: this.arraySegments,
       arraySizeRatio: this.arraySizeRatio,
       arrayPositionRatio: this.arrayPositionRatio

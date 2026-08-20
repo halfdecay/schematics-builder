@@ -8,7 +8,8 @@ import { ComponentManager, componentManager } from '../components/ComponentManag
 import { updateRays } from './DrawRays.js';
 import { rebuildDebugForComponent } from '../utils/DebugLayer.js';
 import { APERTURE_RADIUS_STEP, APERTURE_OFFSET_STEP, ARRAY_SIZE_RATIO_STEP, ARRAY_POSITION_RATIO_STEP,
-         DEFAULT_SOLID_RAY_COLOR, DEFAULT_RAY_POLYGON_OPACITY } from '../config.js';
+         DEFAULT_SOLID_RAY_COLOR, DEFAULT_RAY_POLYGON_OPACITY, MIN_SCALE, MAX_SCALE,
+         SCALE_SNAP_INCREMENT } from '../config.js';
 import { actionHistory } from '../history/ActionHistory.js';
 
 /** Extract the 0-359 hue from either an HSL or 6-digit hex color string. */
@@ -40,7 +41,7 @@ let currentParentId = null;
 
 const CONNECTION_FIELDS = new Set([
   'rayShape', 'rayPolygonColor', 'rayPolygonOpacity', 'rayColorInheritFromParent',
-  'rayGradientEnabled', 'rayPolygonColor2', 'rayFlip', 'apertureRadius',
+  'rayGradientEnabled', 'rayPolygonColor2', 'rayFlip', 'rayWidthMode', 'apertureRadius',
   'apertureCenterOffset', 'arraySegments', 'arraySizeRatio', 'arrayPositionRatio', 'coneAngle'
 ]);
 
@@ -70,7 +71,7 @@ function createRayEditor(component, parentId) {
 
 const EMPTY_HTML = `
   <div class="rp-empty">
-    <p>Select a component<br>to configure its rays</p>
+    <p>Select a component<br>to configure its properties</p>
   </div>
 `;
 
@@ -88,6 +89,7 @@ function buildPanelHTML(comp) {
   const inheritColor = comp.rayColorInheritFromParent ?? true;
   const gradientEnabled = comp.rayGradientEnabled ?? false;
   const rayFlip = comp.rayFlip ?? false;
+  const widthMode = comp.rayWidthMode ?? 'projected';
   // Non-entry composite members have all ray controls locked in the UI;
   // only the entry port may be edited. Ray propagation still flows normally.
   const compLocked = comp.isCompositeInstance && !comp.isEntryPort;
@@ -100,7 +102,7 @@ function buildPanelHTML(comp) {
   //   - array: user-adjustable (not auto-scaled)
   const parentComp = (comp.parent != null) ? componentManager.getComponent(comp.parent) : null;
   const divergentParentControlled = shape === 'divergent' && parentComp && parentComp.coneAngle;
-  const radiusDisabled = compLocked || (!!parentComp && (shape === 'collimated' || divergentParentControlled));
+  const radiusDisabled = compLocked || (widthMode !== 'fixed' && !!parentComp && (shape === 'collimated' || divergentParentControlled));
   const connectionIds = currentBaseComponent?.getParentIds?.() || [];
   const connectionOptions = connectionIds.map(parentId => {
     const parent = componentManager.getComponent(parentId);
@@ -108,16 +110,26 @@ function buildPanelHTML(comp) {
     return `<option value="${parentId}" ${parentId === currentParentId ? 'selected' : ''}>${label}</option>`;
   }).join('');
   const rotation = currentBaseComponent?.rotation ?? 0;
+  const scale = currentBaseComponent?.scale ?? 1;
 
-  return `
-    ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
+  const objectSection = `
     <div class="rp-section">
       <div class="rp-section-title">Object</div>
       <div class="rp-field">
         <label class="rp-label" for="rp-rotation">Rotation (deg)</label>
         <input type="number" id="rp-rotation" class="rp-number" step="1" value="${rotation.toFixed(2)}">
       </div>
-    </div>
+      <div class="rp-field">
+        <label class="rp-label" for="rp-scale">Scale</label>
+        <input type="number" id="rp-scale" class="rp-number" min="${MIN_SCALE}" max="${MAX_SCALE}" step="${SCALE_SNAP_INCREMENT}" value="${scale.toFixed(2)}">
+      </div>
+    </div>`;
+
+  if (currentBaseComponent?.isAnnotation) return objectSection;
+
+  return `
+    ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
+    ${objectSection}
     <div class="rp-section">
       <div class="rp-section-title">Incoming Rays</div>
       ${connectionIds.length
@@ -140,6 +152,13 @@ function buildPanelHTML(comp) {
           <input type="checkbox" id="rp-ray-flip" ${rayFlip ? 'checked' : ''}${compLocked ? ' disabled' : ''}>
           Flip ray edges
         </label>
+      </div>
+      <div class="rp-field">
+        <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}" for="rp-width-mode">Ray Width</label>
+        <select id="rp-width-mode" class="rp-select"${compLocked ? ' disabled' : ''}>
+          <option value="projected" ${widthMode === 'projected' ? 'selected' : ''}>Projected aperture</option>
+          <option value="fixed" ${widthMode === 'fixed' ? 'selected' : ''}>Fixed aperture radius</option>
+        </select>
       </div>
     </div>
 
@@ -260,6 +279,41 @@ function wireEvents(body) {
   });
   get('rp-rotation')?.addEventListener('change', () => commitControlHistory());
 
+  get('rp-scale')?.addEventListener('input', e => {
+    const requestedScale = parseFloat(e.target.value);
+    if (!currentBaseComponent || !Number.isFinite(requestedScale)) return;
+    beginControlHistory('Set object scale', 'object-scale');
+
+    const clampedScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, requestedScale));
+    if (componentManager.selectedIds.size > 1) {
+      const ids = Array.from(componentManager.selectedIds);
+      const currentScale = currentBaseComponent.getScale();
+      if (currentScale <= 0) return;
+      const centroid = componentManager.getGroupCentroid(ids);
+      const states = componentManager.getGroupInitialStates(ids);
+      let scaleFactor = clampedScale / currentScale;
+      let minAllowedFactor = 0;
+      let maxAllowedFactor = Infinity;
+      states.forEach(state => {
+        minAllowedFactor = Math.max(minAllowedFactor, MIN_SCALE / state.scale);
+        maxAllowedFactor = Math.min(maxAllowedFactor, MAX_SCALE / state.scale);
+      });
+      scaleFactor = Math.max(minAllowedFactor, Math.min(maxAllowedFactor, scaleFactor));
+      componentManager.updateGroupScale(ids, centroid, scaleFactor, states);
+    } else {
+      const entry = [...componentManager.components.entries()].find(([, component]) => component === currentBaseComponent);
+      if (entry) componentManager.updateComponentScale(entry[0], clampedScale);
+    }
+
+    e.target.value = currentBaseComponent.getScale().toFixed(2);
+    updateRays();
+    rebuildDebugForComponent(currentBaseComponent);
+  });
+  get('rp-scale')?.addEventListener('change', e => {
+    if (currentBaseComponent) e.target.value = currentBaseComponent.getScale().toFixed(2);
+    commitControlHistory();
+  });
+
   const apply = () => {
     if (!currentComponent) return;
     updateRays();
@@ -274,6 +328,9 @@ function wireEvents(body) {
     if (!actionHistory.isApplyingHistory) actionHistory.commit();
   };
 
+  // Annotation components have object transforms but no optical-ray settings.
+  if (currentBaseComponent?.isAnnotation) return;
+
   get('rp-shape').addEventListener('change', e => {
     actionHistory.run('Change ray shape', 'ray-shape', () => {
       if (!currentComponent) return;
@@ -287,10 +344,13 @@ function wireEvents(body) {
       const parentComp = (currentComponent.parent != null)
         ? componentManager.getComponent(currentComponent.parent) : null;
       const divergentParentControlled = newShape === 'divergent' && parentComp && parentComp.coneAngle;
-      const radiusDisabled = !!parentComp && (newShape === 'collimated' || divergentParentControlled);
+      const radiusDisabled = currentComponent.rayWidthMode !== 'fixed' && !!parentComp &&
+        (newShape === 'collimated' || divergentParentControlled);
       const radiusSlider = get('rp-radius');
+      const radiusNumber = get('rp-radius-number');
       const radiusLabel  = radiusSlider?.closest('.rp-field')?.querySelector('.rp-label');
-      radiusSlider.disabled = radiusDisabled;
+      if (radiusSlider) radiusSlider.disabled = radiusDisabled;
+      if (radiusNumber) radiusNumber.disabled = radiusDisabled;
       if (radiusLabel) radiusLabel.classList.toggle('rp-label-disabled', radiusDisabled);
 
       apply();
@@ -301,6 +361,30 @@ function wireEvents(body) {
     actionHistory.run('Flip ray edges', 'ray-flip', () => {
       if (!currentComponent) return;
       currentComponent.rayFlip = e.target.checked;
+      apply();
+    });
+  });
+
+  get('rp-width-mode').addEventListener('change', e => {
+    actionHistory.run('Change ray width mode', 'ray-width-mode', () => {
+      if (!currentComponent) return;
+      currentComponent.rayWidthMode = e.target.value === 'fixed' ? 'fixed' : 'projected';
+      if (currentParentId == null || currentBaseComponent?.parent === currentParentId) {
+        currentBaseComponent.rayWidthMode = currentComponent.rayWidthMode;
+      }
+
+      const radiusSlider = get('rp-radius');
+      const radiusNumber = get('rp-radius-number');
+      const radiusLabel = radiusSlider?.closest('.rp-field')?.querySelector('.rp-label');
+      const parentComp = currentComponent.parent != null
+        ? componentManager.getComponent(currentComponent.parent)
+        : null;
+      const divergentParentControlled = currentComponent.rayShape === 'divergent' && parentComp && parentComp.coneAngle;
+      const radiusDisabled = currentComponent.rayWidthMode !== 'fixed' && !!parentComp &&
+        (currentComponent.rayShape === 'collimated' || divergentParentControlled);
+      if (radiusSlider) radiusSlider.disabled = radiusDisabled;
+      if (radiusNumber) radiusNumber.disabled = radiusDisabled;
+      if (radiusLabel) radiusLabel.classList.toggle('rp-label-disabled', radiusDisabled);
       apply();
     });
   });

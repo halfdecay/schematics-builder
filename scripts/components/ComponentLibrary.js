@@ -26,6 +26,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 //     // Button label shown in the sidebar.
 //     label: 'My Component',
 //
+//     // Optional: true for non-optical annotations such as arrows or labels.
+//     // Annotations do not create parent/child ray links.
+//     isAnnotation: false,
+//
 //     // Tight bounding box of the SVG artwork in local coordinates.
 //     // Used for hit-testing and the selection highlight box.
 //     localBounds: { minX: -W/2, maxX: W/2, minY: -H/2, maxY: H/2 },
@@ -70,7 +74,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 export const components = {
 
     'text-annotation': {
-        category: 'Misc', label: 'Text', isComposite: false, isBuiltIn: true,
+        category: 'Annotations', label: 'Text', isComposite: false, isBuiltIn: true, isAnnotation: true,
         localBounds: { minX: -50, maxX: 50, minY: -14, maxY: 8 },
         centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
         apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
@@ -83,6 +87,103 @@ export const components = {
             text.setAttribute('font-family', 'Arial, sans-serif');
             text.setAttribute('fill', '#111'); text.textContent = 'Text';
             g.appendChild(text);
+            return g;
+        }
+    },
+
+    'arrow-annotation': {
+        category: 'Annotations', label: 'Arrow', isComposite: false, isBuiltIn: true, isAnnotation: true,
+        localBounds: { minX: -42, maxX: 42, minY: -10, maxY: 10 },
+        centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
+        apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
+        apertureRadius: 0, coneAngle: 0, rayShape: 'manual',
+        draw: (ns) => {
+            const g = document.createElementNS(ns, 'g');
+            const shaft = document.createElementNS(ns, 'line');
+            shaft.setAttribute('x1', '-40'); shaft.setAttribute('y1', '0');
+            shaft.setAttribute('x2', '40'); shaft.setAttribute('y2', '0');
+            shaft.setAttribute('stroke', '#111'); shaft.setAttribute('stroke-width', '2');
+            shaft.setAttribute('stroke-linecap', 'round');
+            g.appendChild(shaft);
+
+            const head = document.createElementNS(ns, 'path');
+            head.setAttribute('d', 'M 30 -8 L 40 0 L 30 8');
+            head.setAttribute('fill', 'none'); head.setAttribute('stroke', '#111');
+            head.setAttribute('stroke-width', '2'); head.setAttribute('stroke-linecap', 'round');
+            head.setAttribute('stroke-linejoin', 'round');
+            g.appendChild(head);
+            return g;
+        }
+    },
+
+    'double-arrow-annotation': {
+        category: 'Annotations', label: 'Double Arrow', isComposite: false, isBuiltIn: true, isAnnotation: true,
+        localBounds: { minX: -42, maxX: 42, minY: -10, maxY: 10 },
+        centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
+        apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
+        apertureRadius: 0, coneAngle: 0, rayShape: 'manual',
+        draw: (ns) => {
+            const g = document.createElementNS(ns, 'g');
+            const shaft = document.createElementNS(ns, 'line');
+            shaft.setAttribute('x1', '-40'); shaft.setAttribute('y1', '0');
+            shaft.setAttribute('x2', '40'); shaft.setAttribute('y2', '0');
+            shaft.setAttribute('stroke', '#111'); shaft.setAttribute('stroke-width', '2');
+            shaft.setAttribute('stroke-linecap', 'round');
+            g.appendChild(shaft);
+
+            const heads = document.createElementNS(ns, 'path');
+            heads.setAttribute('d', 'M -30 -8 L -40 0 L -30 8 M 30 -8 L 40 0 L 30 8');
+            heads.setAttribute('fill', 'none'); heads.setAttribute('stroke', '#111');
+            heads.setAttribute('stroke-width', '2'); heads.setAttribute('stroke-linecap', 'round');
+            heads.setAttribute('stroke-linejoin', 'round');
+            g.appendChild(heads);
+            return g;
+        }
+    },
+
+    'coordinate-system-annotation': {
+        category: 'Annotations', label: 'Coordinate System', isComposite: false, isBuiltIn: true, isAnnotation: true,
+        localBounds: { minX: -5, maxX: 49, minY: -49, maxY: 8 },
+        centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
+        apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
+        apertureRadius: 0, coneAngle: 0, rayShape: 'manual',
+        draw: (ns) => {
+            const g = document.createElementNS(ns, 'g');
+            const axes = document.createElementNS(ns, 'path');
+            axes.setAttribute('d', 'M 0 0 L 42 0 M 34 -7 L 42 0 L 34 7 M 0 0 L 0 -42 M -7 -34 L 0 -42 L 7 -34');
+            axes.setAttribute('fill', 'none'); axes.setAttribute('stroke', '#111');
+            axes.setAttribute('stroke-width', '2'); axes.setAttribute('stroke-linecap', 'round');
+            axes.setAttribute('stroke-linejoin', 'round');
+            g.appendChild(axes);
+
+            const xLabel = document.createElementNS(ns, 'text');
+            xLabel.setAttribute('x', '46'); xLabel.setAttribute('y', '5');
+            xLabel.setAttribute('font-family', 'Arial, sans-serif'); xLabel.setAttribute('font-size', '13');
+            xLabel.setAttribute('text-anchor', 'middle'); xLabel.textContent = 'x';
+            g.appendChild(xLabel);
+
+            const yLabel = document.createElementNS(ns, 'text');
+            yLabel.setAttribute('x', '0'); yLabel.setAttribute('y', '-46');
+            yLabel.setAttribute('font-family', 'Arial, sans-serif'); yLabel.setAttribute('font-size', '13');
+            yLabel.setAttribute('text-anchor', 'middle'); yLabel.textContent = 'y';
+            g.appendChild(yLabel);
+            return g;
+        }
+    },
+
+    'scale-bar-annotation': {
+        category: 'Annotations', label: 'Scale Bar', isComposite: false, isBuiltIn: true, isAnnotation: true,
+        localBounds: { minX: -42, maxX: 42, minY: -9, maxY: 9 },
+        centerPoint: { x: 0, y: 0 }, forwardVector: { x: 1, y: 0 },
+        apertureCenter: { x: 0, y: 0 }, upVector: { x: 0, y: -1 },
+        apertureRadius: 0, coneAngle: 0, rayShape: 'manual',
+        draw: (ns) => {
+            const g = document.createElementNS(ns, 'g');
+            const bar = document.createElementNS(ns, 'path');
+            bar.setAttribute('d', 'M -40 -7 L -40 7 M -40 0 L 40 0 M 40 -7 L 40 7');
+            bar.setAttribute('fill', 'none'); bar.setAttribute('stroke', '#111');
+            bar.setAttribute('stroke-width', '2'); bar.setAttribute('stroke-linecap', 'square');
+            g.appendChild(bar);
             return g;
         }
     },

@@ -151,9 +151,20 @@ function flipUpVector(comp) {
  *
  * @param {Component} child   - The child component to scale.
  * @param {Component} parent  - The parent component (already resolved by caller).
+ * @param {number|null} parentId - Connection parent ID, used for per-link settings.
  */
-export function applyApertureScaling(child, parent) {
+export function applyApertureScaling(child, parent, parentId = null) {
     if (!parent) return;
+
+    const connectionConfig = parentId == null
+        ? null
+        : child.rayConfigs?.[String(parentId)];
+    const widthMode = connectionConfig?.rayWidthMode ?? child.rayWidthMode ?? 'projected';
+
+    // Fixed mode draws virtual aperture boundaries perpendicular to the ray axis.
+    // The configured apertureRadius must therefore remain untouched by projection,
+    // cone inheritance, or crossing correction.
+    if (widthMode === 'fixed') return;
 
     // Composite members have their ray geometry frozen against *external* cascades
     // (e.g. a component outside the composite rescaling into it).
@@ -244,7 +255,7 @@ export function recursivelyUpdateChildrenApertures(root, getComponent) {
             : rawParent;
         if (!parent) continue;
 
-        applyApertureScaling(child, parent);
+        applyApertureScaling(child, parent, child.parent);
         recursivelyUpdateChildrenApertures(child, getComponent);
     }
 }

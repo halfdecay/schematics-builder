@@ -47,7 +47,7 @@ export class ComponentManager {
     // Align new component's forward vector with the previously selected component's arrow vector
     const previousId = this.currentId;
     const previousComponent = this.components.get(previousId);
-    if (previousComponent && type !== 'text-annotation') {
+    if (previousComponent && !component.isAnnotation && !previousComponent.isAnnotation) {
       const arrowVector = previousComponent.getArrowVector();
       // Calculate angle from arrow vector
       const angle = Math.atan2(arrowVector.y, arrowVector.x) * 180 / Math.PI;
@@ -73,7 +73,7 @@ export class ComponentManager {
       }
 
       // Scale aperture to match parent projection at spawn time
-      applyApertureScaling(component, previousComponent);
+      applyApertureScaling(component, previousComponent, previousId);
     }
     
     
@@ -645,14 +645,35 @@ export class ComponentManager {
   }
 
   alignSelected(axis) {
+    const supportedAxes = new Set(['horizontal', 'vertical', 'diagonal-positive', 'diagonal-negative']);
+    if (!supportedAxes.has(axis)) return false;
+
     const units = this.getSelectedAlignmentUnits();
     if (units.length < 2) return false;
     const anchor = units.find(unit => unit.ids.includes(this.currentId)) || units[0];
-    const target = axis === 'horizontal' ? anchor.center.y : anchor.center.x;
 
     units.forEach(unit => {
-      const deltaX = axis === 'vertical' ? target - unit.center.x : 0;
-      const deltaY = axis === 'horizontal' ? target - unit.center.y : 0;
+      let deltaX = 0;
+      let deltaY = 0;
+
+      if (axis === 'horizontal') {
+        deltaY = anchor.center.y - unit.center.y;
+      } else if (axis === 'vertical') {
+        deltaX = anchor.center.x - unit.center.x;
+      } else {
+        const angle = axis === 'diagonal-positive' ? 45 : -45;
+        const radians = angle * Math.PI / 180;
+        const directionX = Math.cos(radians);
+        const directionY = Math.sin(radians);
+        const offsetX = unit.center.x - anchor.center.x;
+        const offsetY = unit.center.y - anchor.center.y;
+        const distanceAlongLine = offsetX * directionX + offsetY * directionY;
+        const projectedX = anchor.center.x + distanceAlongLine * directionX;
+        const projectedY = anchor.center.y + distanceAlongLine * directionY;
+        deltaX = projectedX - unit.center.x;
+        deltaY = projectedY - unit.center.y;
+      }
+
       unit.ids.forEach(id => {
         const component = this.components.get(id);
         if (component) component.setPosition(component.x + deltaX, component.y + deltaY);
@@ -660,6 +681,38 @@ export class ComponentManager {
     });
     if (this.currentId != null) this.updateNextPositionFromComponent(this.currentId);
     return true;
+  }
+
+  /**
+   * Rotate a flat mirror so its local normal lies on the internal angle
+   * bisector of its two incoming ray directions.
+   */
+  alignMirrorToIncomingBisector(id) {
+    const mirror = this.components.get(id);
+    if (!mirror || mirror.type !== 'mirror') return false;
+
+    const parentIds = [...new Set(mirror.getParentIds())];
+    if (parentIds.length !== 2) return false;
+    const parents = parentIds.map(parentId => this.components.get(parentId));
+    if (parents.some(parent => !parent)) return false;
+
+    const mirrorPoint = mirror.getApertureCenterWorld();
+    const directions = parents.map(parent => {
+      const parentPoint = parent.getApertureCenterWorld();
+      const dx = parentPoint.x - mirrorPoint.x;
+      const dy = parentPoint.y - mirrorPoint.y;
+      const length = Math.hypot(dx, dy);
+      return length > 1e-9 ? { x: dx / length, y: dy / length } : null;
+    });
+    if (directions.some(direction => !direction)) return false;
+
+    const bisectorX = directions[0].x + directions[1].x;
+    const bisectorY = directions[0].y + directions[1].y;
+    if (Math.hypot(bisectorX, bisectorY) < 1e-9) return false;
+
+    const targetAngle = Math.atan2(bisectorY, bisectorX) * 180 / Math.PI;
+    const localNormalAngle = Math.atan2(mirror.forwardVector.y, mirror.forwardVector.x) * 180 / Math.PI;
+    return this.updateComponentRotation(id, targetAngle - localNormalAngle);
   }
 
   getSelectedAlignmentUnits() {
@@ -857,6 +910,7 @@ export class ComponentManager {
       // then use setters so _getAperturePoints() is always recomputed
       // with the correct shape, radius, offset, and array params.
       component.rayShape = member.rayShape ?? 'collimated';
+      component.rayWidthMode = member.rayWidthMode ?? 'projected';
       if (member.arraySegments != null) component.setArraySegments(member.arraySegments);
       if (member.arraySizeRatio != null) {
         component.setArraySizeRatio(member.arraySizeRatio);

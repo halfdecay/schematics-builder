@@ -1209,6 +1209,14 @@ input[type="range"].single-knob {
   color: #444;
 }
 
+.align-angle-icon {
+  min-width: 28px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.4px;
+}
+
 .rp-value {
   font-size: 0.8rem;
   font-weight: 400;

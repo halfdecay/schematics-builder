@@ -2,9 +2,9 @@ import {
 	addComponent,
 	componentManager
 } from '../components/index.js';
-import { removeRotationHandle } from './RotationHandle.js';
-import { removeScaleHandle } from './ScaleHandle.js';
-import { removeArrowHandle } from './ArrowHandle.js';
+import { showRotationHandle, removeRotationHandle } from './RotationHandle.js';
+import { showScaleHandle, removeScaleHandle } from './ScaleHandle.js';
+import { showArrowHandle, removeArrowHandle } from './ArrowHandle.js';
 import { showUnifiedBoundingBox, removeUnifiedBoundingBox } from './InteractionHandlers.js';
 import { canvas } from '../Canvas.js';
 import { updateRays } from '../rays/DrawRays.js';
@@ -103,8 +103,10 @@ export function updateToolbarButtons() {
   // For composite instances currentId is the exit port, but the external
   // parent link lives on the entry port — check that instead.
   let canCutLink = false;
+  let canAlignMirror = false;
   if (hasFocus) {
     const component = componentManager.getComponent(componentManager.currentId);
+    canAlignMirror = selectedCount === 1 && component?.type === 'mirror' && component.getParentIds().length === 2;
     if (component && component.isExitPort && component.isCompositeInstance) {
       const entryId = componentManager.getCompositeEntryPortId(componentManager.currentId);
       const entryComp = entryId !== null ? componentManager.getComponent(entryId) : null;
@@ -130,7 +132,10 @@ export function updateToolbarButtons() {
     cutLink: document.getElementById('cut-link-btn'),
     reLink: document.getElementById('re-link-btn'),
     alignHorizontal: document.getElementById('align-horizontal-btn'),
-    alignVertical: document.getElementById('align-vertical-btn')
+    alignVertical: document.getElementById('align-vertical-btn'),
+    alignDiagonalPositive: document.getElementById('align-diagonal-positive-btn'),
+    alignDiagonalNegative: document.getElementById('align-diagonal-negative-btn'),
+    alignMirrorBisector: document.getElementById('align-mirror-bisector-btn')
   };
   
   // Mode 1: Single component selection
@@ -150,6 +155,9 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, true);
     setButtonVisibility(buttons.alignHorizontal, false);
     setButtonVisibility(buttons.alignVertical, false);
+    setButtonVisibility(buttons.alignDiagonalPositive, false);
+    setButtonVisibility(buttons.alignDiagonalNegative, false);
+    setButtonVisibility(buttons.alignMirrorBisector, canAlignMirror);
   }
   // Mode 2: Multiple selection, no focus
   else if (selectedCount > 1 && !hasFocus) {
@@ -168,6 +176,9 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, false);
     setButtonVisibility(buttons.alignHorizontal, canAlign);
     setButtonVisibility(buttons.alignVertical, canAlign);
+    setButtonVisibility(buttons.alignDiagonalPositive, canAlign);
+    setButtonVisibility(buttons.alignDiagonalNegative, canAlign);
+    setButtonVisibility(buttons.alignMirrorBisector, false);
   }
   // Mode 3: Multiple selection, one focused
   else if (selectedCount > 1 && hasFocus) {
@@ -186,6 +197,9 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, true);
     setButtonVisibility(buttons.alignHorizontal, canAlign);
     setButtonVisibility(buttons.alignVertical, canAlign);
+    setButtonVisibility(buttons.alignDiagonalPositive, canAlign);
+    setButtonVisibility(buttons.alignDiagonalNegative, canAlign);
+    setButtonVisibility(buttons.alignMirrorBisector, false);
   }
   // No selection
   else {
@@ -204,6 +218,9 @@ export function updateToolbarButtons() {
     setButtonVisibility(buttons.reLink, false);
     setButtonVisibility(buttons.alignHorizontal, false);
     setButtonVisibility(buttons.alignVertical, false);
+    setButtonVisibility(buttons.alignDiagonalPositive, false);
+    setButtonVisibility(buttons.alignDiagonalNegative, false);
+    setButtonVisibility(buttons.alignMirrorBisector, false);
   }
 }
 
@@ -424,6 +441,20 @@ export function setupActionButtons() {
   });
   document.getElementById('align-horizontal-btn')?.addEventListener('click', () => align('horizontal'));
   document.getElementById('align-vertical-btn')?.addEventListener('click', () => align('vertical'));
+  document.getElementById('align-diagonal-positive-btn')?.addEventListener('click', () => align('diagonal-positive'));
+  document.getElementById('align-diagonal-negative-btn')?.addEventListener('click', () => align('diagonal-negative'));
+
+  document.getElementById('align-mirror-bisector-btn')?.addEventListener('click', () => {
+    const mirrorId = componentManager.currentId;
+    if (mirrorId == null) return;
+    actionHistory.run('Align mirror to ray bisector', 'align-mirror-bisector', () => {
+      if (!componentManager.alignMirrorToIncomingBisector(mirrorId)) return;
+      showRotationHandle(mirrorId);
+      showScaleHandle(mirrorId);
+      showArrowHandle(mirrorId);
+      updateRays();
+    });
+  });
 
   // Reset canvas button
   const resetCanvasBtn = document.getElementById('reset-canvas-btn');
