@@ -93,6 +93,7 @@ export function drawApertureRays() {
 function _createConnectionView(child, parentId) {
     const view = Object.create(Object.getPrototypeOf(child));
     Object.assign(view, child, child.getRayConfig(parentId));
+    view._baseComponent = child;
     view.aperturePoints = view._getAperturePoints();
     return view;
 }
@@ -150,10 +151,97 @@ function _createFixedApertureView(component, perpendicular) {
     return view;
 }
 
+function _createClippedBeamView(component, perpendicular, radius) {
+    const view = Object.create(component);
+    view.apertureRadius = radius;
+    view.getAperturePointsWorld = () => {
+        const center = component.getApertureCenterWorld();
+        const radians = component.rotation * Math.PI / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const upX = component.upVector.x * cos - component.upVector.y * sin;
+        const upY = component.upVector.x * sin + component.upVector.y * cos;
+        const projection = upX * perpendicular.x + upY * perpendicular.y;
+        if (Math.abs(projection) < 1e-9) return [center, center];
+        const distanceOnPlane = radius / projection;
+        return [
+            { x: center.x + upX * distanceOnPlane, y: center.y + upY * distanceOnPlane },
+            { x: center.x - upX * distanceOnPlane, y: center.y - upY * distanceOnPlane }
+        ];
+    };
+    view.getApertureFullExtentWorld = view.getAperturePointsWorld;
+    return view;
+}
+
+function _resolveRayParent(component) {
+    if (component.parent == null) return null;
+    const rawParent = componentManager.getComponent(component.parent);
+    if (!rawParent) return null;
+    const sameCompositeInstance = component.isCompositeInstance &&
+        rawParent.isCompositeInstance &&
+        component.compositeInstanceId === rawParent.compositeInstanceId;
+    return sameCompositeInstance ? rawParent : componentManager.getCompositeExitPort(rawParent);
+}
+
+function _projectedClearRadius(component, other) {
+    const projections = calculateProjections(component, other);
+    return projections?.child.apertureProjection ?? 0;
+}
+
+/**
+ * Width leaving component in the direction of `next`.
+ *
+ * The incoming beam width is propagated unchanged through collimated links.
+ * The component can only reduce it when its projected clear aperture is
+ * smaller; a large optic never expands or contracts a narrower beam.
+ */
+function _getOutgoingCollimatedWidth(component, next, visited = new Set()) {
+    if (visited.has(component)) return _projectedClearRadius(component, next);
+    visited.add(component);
+
+    const outgoingCapacity = _projectedClearRadius(component, next);
+    const previous = _resolveRayParent(component);
+    if (!previous) return outgoingCapacity;
+
+    const incomingConfig = component.getRayConfig?.(component.parent);
+    if (incomingConfig?.rayShape !== 'aperture-clipped') return outgoingCapacity;
+
+    const configuredWidth = Number.isFinite(incomingConfig.apertureRadius)
+        ? incomingConfig.apertureRadius
+        : Infinity;
+    const incomingWidth = Math.min(
+        _getOutgoingCollimatedWidth(previous, component, visited),
+        configuredWidth
+    );
+    const incomingCapacity = _projectedClearRadius(component, previous);
+    const widthAtComponent = Math.min(incomingWidth, incomingCapacity);
+    return Math.min(widthAtComponent, outgoingCapacity);
+}
+
 function _createRayGeometryViews(parent, child) {
-    if (child.rayWidthMode !== 'fixed') return { parent, child };
     const perpendicular = _getFixedConnectionPerpendicular(parent, child);
     if (!perpendicular) return { parent, child };
+
+    if (child.rayShape === 'aperture-clipped') {
+        const baseChild = child._baseComponent || child;
+        const configuredWidth = Number.isFinite(child.apertureRadius)
+            ? child.apertureRadius
+            : Infinity;
+        const startRadius = Math.min(
+            _getOutgoingCollimatedWidth(parent, baseChild),
+            configuredWidth
+        );
+        const endRadius = Math.min(startRadius, _projectedClearRadius(baseChild, parent));
+        if (startRadius > 0 && endRadius > 0) {
+            return {
+                parent: _createClippedBeamView(parent, perpendicular, startRadius),
+                child: _createClippedBeamView(child, perpendicular, endRadius)
+            };
+        }
+        return { parent, child };
+    }
+
+    if (child.rayWidthMode !== 'fixed') return { parent, child };
     return {
         parent: _createFixedApertureView(parent, perpendicular),
         child: _createFixedApertureView(child, perpendicular)
@@ -177,6 +265,10 @@ export function getPolygonsForConnection(parent, child, gradientId = null) {
         case 'collimated':
             const collimated = _createCollimatedPolygon(parent, child, gradientId);
             if (collimated) polygons.push(collimated);
+            break;
+        case 'aperture-clipped':
+            const apertureClipped = _createCollimatedPolygon(parent, child, gradientId);
+            if (apertureClipped) polygons.push(apertureClipped);
             break;
         case 'divergent':
             const divergent = _createDivergentPolygon(parent, child, gradientId);

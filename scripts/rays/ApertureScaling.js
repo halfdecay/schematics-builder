@@ -68,27 +68,15 @@ export function calculateProjections(child, parent) {
     };
 }
 
-/**
- * Scale a child component's apertureRadius so its projected aperture width
- * matches its parent's (collimated ray rule).
- * Returns true if the radius was updated, false otherwise.
- *
- * @param {Component} child
- * @param {Component} parent
- * @returns {boolean}
- */
 function scaleApertureToParent(child, parent) {
     const proj = calculateProjections(child, parent);
     if (!proj) return false;
 
-    const childProj  = proj.child.apertureProjection;
+    const childProj = proj.child.apertureProjection;
     const parentProj = proj.parent.apertureProjection;
-
     if (childProj === 0) return false;
 
-    const ratio     = parentProj / childProj;
-    const newRadius = child.apertureRadius * ratio;
-
+    const newRadius = child.apertureRadius * parentProj / childProj;
     if (newRadius <= 0 || newRadius > 200 || !isFinite(newRadius)) return false;
 
     child.setApertureRadius(newRadius);
@@ -146,8 +134,7 @@ function flipUpVector(comp) {
  * Apply aperture scaling (and crossing correction) to a single child component
  * relative to its parent.
  *
- * 1. Scale child's apertureRadius to match parent projection.
- * 2. If aperture lines cross, flip the child's upVector and re-scale.
+ * Correct aperture-edge orientation and update non-collimated beam modes.
  *
  * @param {Component} child   - The child component to scale.
  * @param {Component} parent  - The parent component (already resolved by caller).
@@ -208,12 +195,18 @@ export function applyApertureScaling(child, parent, parentId = null) {
         return;
     }
 
-    // Collimated and Array: scale child's apertureRadius to match parent projection.
-    // For array, segments scale proportionally since they are derived from apertureRadius.
-    // 1. Scale to match parent projection
-    scaleApertureToParent(child, parent);
+    // Aperture-clipped collimated beams keep their width and are clipped only
+    // by a genuinely smaller projected clear aperture during rendering.
+    if (child.rayShape === 'aperture-clipped') {
+        if (child.apertureRadius > 0 && parent.apertureRadius > 0 && checkLinesCross(child, parent)) {
+            flipUpVector(child);
+        }
+        return;
+    }
 
-    // 2. Crossing check — if rays cross, flip upVector and re-scale.
+    // Original collimated behaviour: make the child's projected aperture match
+    // the parent's projected aperture.
+    scaleApertureToParent(child, parent);
     if (child.apertureRadius > 0 && parent.apertureRadius > 0 && checkLinesCross(child, parent)) {
         flipUpVector(child);
         scaleApertureToParent(child, parent);
@@ -221,7 +214,7 @@ export function applyApertureScaling(child, parent, parentId = null) {
 }
 
 /**
- * Recursively apply aperture scaling to all descendants of a given component.
+ * Recursively update aperture-dependent state for all descendants.
  * Call this after any component is moved, rotated, or scaled so that the
  * entire sub-tree stays visually coherent.
  *

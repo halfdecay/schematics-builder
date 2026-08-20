@@ -38,6 +38,8 @@ function _hueToRayColor(hue) {
 let currentComponent = null;
 let currentBaseComponent = null;
 let currentParentId = null;
+let currentRayChild = null;
+let currentConnectionKey = null;
 
 const CONNECTION_FIELDS = new Set([
   'rayShape', 'rayPolygonColor', 'rayPolygonOpacity', 'rayColorInheritFromParent',
@@ -65,6 +67,44 @@ function createRayEditor(component, parentId) {
       return Reflect.set(target, prop, value, target);
     }
   });
+}
+
+function getComponentId(component) {
+  for (const [id, candidate] of componentManager.components) {
+    if (candidate === component) return id;
+  }
+  return null;
+}
+
+function getRayConnections(component) {
+  if (!component) return [];
+  const componentId = getComponentId(component);
+  if (componentId == null) return [];
+
+  const incoming = component.getParentIds().map(parentId => ({
+    key: `${parentId}:${componentId}`,
+    direction: 'incoming',
+    parentId,
+    child: component
+  }));
+  const outgoing = (component.children || []).flatMap(childId => {
+    const child = componentManager.getComponent(childId);
+    if (!child || !child.getParentIds().includes(componentId)) return [];
+    return [{
+      key: `${componentId}:${childId}`,
+      direction: 'outgoing',
+      parentId: componentId,
+      child
+    }];
+  });
+  return [...incoming, ...outgoing];
+}
+
+function selectRayConnection(connection) {
+  currentConnectionKey = connection?.key ?? null;
+  currentParentId = connection?.parentId ?? null;
+  currentRayChild = connection?.child ?? currentBaseComponent;
+  currentComponent = createRayEditor(currentRayChild, currentParentId);
 }
 
 // â”€â”€â”€ HTML template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -102,12 +142,18 @@ function buildPanelHTML(comp) {
   //   - array: user-adjustable (not auto-scaled)
   const parentComp = (comp.parent != null) ? componentManager.getComponent(comp.parent) : null;
   const divergentParentControlled = shape === 'divergent' && parentComp && parentComp.coneAngle;
-  const radiusDisabled = compLocked || (widthMode !== 'fixed' && !!parentComp && (shape === 'collimated' || divergentParentControlled));
-  const connectionIds = currentBaseComponent?.getParentIds?.() || [];
-  const connectionOptions = connectionIds.map(parentId => {
-    const parent = componentManager.getComponent(parentId);
-    const label = parent ? `${parent.name} (#${parentId})` : `Component #${parentId}`;
-    return `<option value="${parentId}" ${parentId === currentParentId ? 'selected' : ''}>${label}</option>`;
+  const radiusDisabled = compLocked || (widthMode !== 'fixed' && !!parentComp &&
+    (shape === 'collimated' || divergentParentControlled));
+  const radiusLabel = shape === 'aperture-clipped' ? 'Beam Radius' : 'Aperture Radius';
+  const rayConnections = getRayConnections(currentBaseComponent);
+  const connectionOptions = rayConnections.map(connection => {
+    const otherId = connection.direction === 'incoming'
+      ? connection.parentId
+      : getComponentId(connection.child);
+    const other = componentManager.getComponent(otherId);
+    const name = other ? other.name : 'Component';
+    const direction = connection.direction === 'incoming' ? 'Incoming ←' : 'Outgoing →';
+    return `<option value="${connection.key}" ${connection.key === currentConnectionKey ? 'selected' : ''}>${direction} ${name} (#${otherId})</option>`;
   }).join('');
   const rotation = currentBaseComponent?.rotation ?? 0;
   const scale = currentBaseComponent?.scale ?? 1;
@@ -131,16 +177,17 @@ function buildPanelHTML(comp) {
     ${compLocked ? '<div class="rp-locked-notice">Locked — edit via entry port</div>' : ''}
     ${objectSection}
     <div class="rp-section">
-      <div class="rp-section-title">Incoming Rays</div>
-      ${connectionIds.length
+      <div class="rp-section-title">Ray Connections</div>
+      ${rayConnections.length
         ? `<select id="rp-connection" class="rp-select">${connectionOptions}</select>`
-        : '<div class="rp-empty-connection">No incoming ray connections</div>'}
+        : '<div class="rp-empty-connection">No ray connections</div>'}
     </div>
     <div class="rp-section">
       <div class="rp-field">
         <label class="rp-label${compLocked ? ' rp-label-disabled' : ''}" for="rp-shape">Ray Shape</label>
         <select id="rp-shape" class="rp-select"${compLocked ? ' disabled' : ''}>
           <option value="collimated" ${shape==='collimated'?'selected':''}>Collimated</option>
+          <option value="aperture-clipped" ${shape==='aperture-clipped'?'selected':''}>Aperture-clipped collimated</option>
           <option value="divergent"  ${shape==='divergent' ?'selected':''}>Divergent</option>
           <option value="convergent" ${shape==='convergent'?'selected':''}>Convergent</option>
           <option value="manual"     ${shape==='manual'    ?'selected':''}>Manual</option>
@@ -201,7 +248,7 @@ function buildPanelHTML(comp) {
 
     <div class="rp-section">
       <div class="rp-field">
-        <label class="rp-label${radiusDisabled ? ' rp-label-disabled' : ''}">Aperture Radius <input type="number" id="rp-radius-number" class="rp-number rp-number-compact" min="0" max="200" step="${APERTURE_RADIUS_STEP}" value="${radius}"${radiusDisabled ? ' disabled' : ''}></label>
+        <label class="rp-label${radiusDisabled ? ' rp-label-disabled' : ''}"><span id="rp-radius-label-text">${radiusLabel}</span> <input type="number" id="rp-radius-number" class="rp-number rp-number-compact" min="0" max="200" step="${APERTURE_RADIUS_STEP}" value="${radius}"${radiusDisabled ? ' disabled' : ''}></label>
         <input type="range" id="rp-radius" class="rp-slider"
                min="0" max="200" step="${APERTURE_RADIUS_STEP}" value="${radius}"${radiusDisabled ? ' disabled' : ''}>
       </div>
@@ -255,8 +302,9 @@ function wireEvents(body) {
   });
 
   get('rp-connection')?.addEventListener('change', e => {
-    currentParentId = Number(e.target.value);
-    currentComponent = createRayEditor(currentBaseComponent, currentParentId);
+    const connection = getRayConnections(currentBaseComponent)
+      .find(candidate => candidate.key === e.target.value);
+    selectRayConnection(connection);
     body.innerHTML = buildPanelHTML(currentComponent);
     wireEvents(body);
   });
@@ -317,7 +365,7 @@ function wireEvents(body) {
   const apply = () => {
     if (!currentComponent) return;
     updateRays();
-    rebuildDebugForComponent(currentBaseComponent || currentComponent);
+    rebuildDebugForComponent(currentRayChild || currentBaseComponent || currentComponent);
   };
 
   const beginControlHistory = (label, type) => {
@@ -336,7 +384,7 @@ function wireEvents(body) {
       if (!currentComponent) return;
       const newShape = e.target.value;
       currentComponent.setRayShape(newShape);
-      if (newShape === 'collimated') currentComponent.coneAngle = 0;
+      if (newShape === 'collimated' || newShape === 'aperture-clipped') currentComponent.coneAngle = 0;
       body.querySelector('#rp-array-section').style.display =
         newShape === 'array' ? '' : 'none';
 
@@ -349,9 +397,11 @@ function wireEvents(body) {
       const radiusSlider = get('rp-radius');
       const radiusNumber = get('rp-radius-number');
       const radiusLabel  = radiusSlider?.closest('.rp-field')?.querySelector('.rp-label');
+      const radiusLabelText = get('rp-radius-label-text');
       if (radiusSlider) radiusSlider.disabled = radiusDisabled;
       if (radiusNumber) radiusNumber.disabled = radiusDisabled;
       if (radiusLabel) radiusLabel.classList.toggle('rp-label-disabled', radiusDisabled);
+      if (radiusLabelText) radiusLabelText.textContent = newShape === 'aperture-clipped' ? 'Beam Radius' : 'Aperture Radius';
 
       apply();
     });
@@ -687,12 +737,14 @@ export function setupRayMenu() {
     if (!component) {
       currentComponent = null;
       currentParentId = null;
+      currentRayChild = null;
+      currentConnectionKey = null;
       body.innerHTML = EMPTY_HTML;
       return;
     }
-    const parentIds = component.getParentIds();
-    currentParentId = parentIds.includes(currentParentId) ? currentParentId : (parentIds[0] ?? null);
-    currentComponent = createRayEditor(component, currentParentId);
+    const connections = getRayConnections(component);
+    const connection = connections.find(candidate => candidate.key === currentConnectionKey) || connections[0] || null;
+    selectRayConnection(connection);
     body.innerHTML = buildPanelHTML(currentComponent);
     wireEvents(body);
   };

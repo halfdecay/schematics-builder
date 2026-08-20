@@ -3,6 +3,13 @@ import { componentManager } from '../components/ComponentManager.js';
 // Trace line settings
 export let showTraceLines = true;
 
+function createConnectionView(component, parentId) {
+    const view = Object.create(Object.getPrototypeOf(component));
+    Object.assign(view, component, component.getRayConfig(parentId));
+    view.aperturePoints = view._getAperturePoints();
+    return view;
+}
+
 // Draw trace lines connecting all parent-child relationships in the scene
 export function drawTraceLines() {
     const canvas = document.getElementById("canvas");
@@ -31,15 +38,27 @@ export function drawTraceLines() {
     if (!showTraceLines) return;
     
     // Iterate through all components
-    componentManager.components.forEach((component) => {
+    componentManager.components.forEach((component, componentId) => {
       const parentIds = [component.parent, ...(component.additionalParents || [])]
         .filter(id => id !== null);
       parentIds.forEach(parentId => {
-        const parentComponent = componentManager.getComponent(parentId);
+        const rawParent = componentManager.getComponent(parentId);
+        if (!rawParent) return;
+        const sameCompositeInstance = component.isCompositeInstance &&
+            rawParent.isCompositeInstance &&
+            component.compositeInstanceId === rawParent.compositeInstanceId;
+        const parentComponent = sameCompositeInstance
+            ? rawParent
+            : componentManager.getCompositeExitPort(rawParent);
         if (!parentComponent) return;
+
+        // The polygon is rendered from the per-connection view as well. Using
+        // the same view here keeps the dashed optical axis attached when this
+        // particular ray has its own aperture-center offset.
+        const childView = createConnectionView(component, parentId);
         
         // Get aperture centers in world space
-        const childCenter = component.getApertureCenterWorld();
+        const childCenter = childView.getApertureCenterWorld();
         const parentCenter = parentComponent.getApertureCenterWorld();
         
         // Draw black dotted line between aperture centers
@@ -52,6 +71,8 @@ export function drawTraceLines() {
         traceLine.setAttribute("stroke-width", "1");
         traceLine.setAttribute("stroke-dasharray", "5,5");
         traceLine.setAttribute("pointer-events", "none");
+        traceLine.dataset.childId = String(componentId);
+        traceLine.dataset.parentId = String(parentId);
         traceLinesGroup.appendChild(traceLine);
       });
     });
