@@ -4,7 +4,6 @@ import {
   MIN_CANVAS_HEIGHT,
   CANVAS_PADDING_PERCENT,
   MIN_CANVAS_PADDING,
-  GRID_SIZE,
   GRID_EXTEND_FACTOR,
   MIN_VIEWBOX_WIDTH,
   MIN_VIEWBOX_HEIGHT,
@@ -12,6 +11,7 @@ import {
   MAX_VIEWBOX_HEIGHT,
   INITIAL_ZOOM
 } from './config.js';
+import { getGridSize, setGridSize as updateGridSize } from './GridSettings.js';
 
 export class CanvasManager {
   constructor() {
@@ -181,7 +181,7 @@ export class CanvasManager {
     const vbHeight = this.currentViewBox.height;
 
     // Grid size in SVG units
-    const gridSize = GRID_SIZE;
+    const gridSize = getGridSize();
     const extend = GRID_EXTEND_FACTOR;
 
     // Extend grid to cover (1 + 2*extend)x the viewBox in all directions
@@ -233,6 +233,12 @@ export class CanvasManager {
     }
     
     return this.gridVisible;
+  }
+
+  setGridSize(value) {
+    const size = updateGridSize(value);
+    this.drawGrid();
+    return size;
   }
 
   hideGrid() {

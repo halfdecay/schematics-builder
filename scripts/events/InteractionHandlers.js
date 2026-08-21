@@ -18,11 +18,11 @@ import {
   COMPOSITE_BBOX_FILL,
   COMPOSITE_BBOX_STROKE,
   COMPOSITE_BBOX_STROKE_WIDTH,
-  COMPOSITE_BBOX_STROKE_DASHARRAY,
-  DRAGGING_SNAP_INCREMENT
+  COMPOSITE_BBOX_STROKE_DASHARRAY
 } from '../config.js';
 import { updateRays } from '../rays/DrawRays.js';
 import { actionHistory } from '../history/ActionHistory.js';
+import { snapPoint } from '../GridSettings.js';
 
 let selectionBox = null;
 let isSelectionBoxActive = false;
@@ -521,8 +521,13 @@ export function setupComponentDragging() {
     if (isGroupDrag) {
       // Group drag: snap the centroid delta, then apply to all components
       // This keeps relative positions exact while snapping the group as a whole
-      const snappedDeltaX = Math.round(deltaX / DRAGGING_SNAP_INCREMENT) * DRAGGING_SNAP_INCREMENT;
-      const snappedDeltaY = Math.round(deltaY / DRAGGING_SNAP_INCREMENT) * DRAGGING_SNAP_INCREMENT;
+      const anchorState = initialPositions.get(componentManager.currentId) ||
+        initialPositions.values().next().value;
+      const snappedAnchor = anchorState
+        ? snapPoint(anchorState.x + deltaX, anchorState.y + deltaY)
+        : { x: deltaX, y: deltaY };
+      const snappedDeltaX = anchorState ? snappedAnchor.x - anchorState.x : deltaX;
+      const snappedDeltaY = anchorState ? snappedAnchor.y - anchorState.y : deltaY;
       
       componentManager.selectedIds.forEach(id => {
         const initialState = initialPositions.get(id);
@@ -569,13 +574,12 @@ export function setupComponentDragging() {
       if (initialState) {
         const newX = initialState.x + deltaX;
         const newY = initialState.y + deltaY;
-        const snappedX = Math.round(newX / DRAGGING_SNAP_INCREMENT) * DRAGGING_SNAP_INCREMENT;
-        const snappedY = Math.round(newY / DRAGGING_SNAP_INCREMENT) * DRAGGING_SNAP_INCREMENT;
+        const snapped = snapPoint(newX, newY);
 
         componentManager.updateComponentPosition(
           draggedId,
-          snappedX,
-          snappedY
+          snapped.x,
+          snapped.y
         );
 
         if (componentManager.selectedIds.size === 1 && componentManager.selectedIds.has(draggedId)) {

@@ -27,9 +27,6 @@ export const ARROW_STROKE_WIDTH = 2;
 export const ARROW_HANDLE_RADIUS = 3;
 export const ARROW_TIP_SNAP_SIZE = 1;
 
-// ===== Component positioning =====
-export const DRAGGING_SNAP_INCREMENT = 1;
-
 // ===== Component rotation handle =====
 export const ROTATION_SNAP_INCREMENT = 2.5;
 export const ROTATION_HANDLE_DISTANCE = 50;
@@ -41,7 +38,7 @@ export const SCALE_HANDLE_DISTANCE = 50;
 export const SCALE_HANDLE_RADIUS = 5;
 export const SCALE_HANDLE_COLOR = '#ffba0c';
 export const SCALE_SNAP_INCREMENT = 0.1;
-export const MIN_SCALE = 0.8;
+export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 2.0;
 
 // ===== Value display =====
@@ -160,5 +157,3 @@ export const COMPOSITE_DIALOG = {
   PREVIEW_MIN_HEIGHT: 220,
   PREVIEW_MAX_HEIGHT: 320
 };
-
-

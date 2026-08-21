@@ -14,6 +14,7 @@ import { showRelinkHoverBoxes, removeRelinkHoverBoxes, removeHoverBox, clearSele
 import { LINK_ARROW_COLOR } from '../config.js';
 import { actionHistory } from '../history/ActionHistory.js';
 import { captureSceneSnapshot, restoreSceneSnapshot } from '../history/HistorySnapshots.js';
+import { setGridSnapEnabled } from '../GridSettings.js';
 
 /**
  * Update toolbar button visibility based on selection mode
@@ -600,6 +601,24 @@ export function setupActionButtons() {
   if (toggleGridBtn) {
     toggleGridBtn.addEventListener('click', () => {
       canvas.toggleGrid();
+    });
+  }
+
+  const snapGridCheckbox = document.getElementById('snap-grid-checkbox');
+  if (snapGridCheckbox) {
+    snapGridCheckbox.addEventListener('change', () => {
+      setGridSnapEnabled(snapGridCheckbox.checked);
+    });
+  }
+
+  const gridSizeInput = document.getElementById('grid-size-input');
+  if (gridSizeInput) {
+    gridSizeInput.addEventListener('input', () => {
+      canvas.setGridSize(gridSizeInput.value);
+    });
+    gridSizeInput.addEventListener('change', () => {
+      const size = canvas.setGridSize(gridSizeInput.value);
+      gridSizeInput.value = String(size);
     });
   }
 

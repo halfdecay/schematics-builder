@@ -9,6 +9,7 @@ import { updateToolbarButtons } from '../events/ButtonHandlers.js';
 import { applyApertureScaling } from '../rays/ApertureScaling.js';
 import { updateRays } from '../rays/DrawRays.js';
 import { refreshDebugForComponent, removeDebugForComponent, refreshDebugLayer } from '../utils/DebugLayer.js';
+import { snapPoint } from '../GridSettings.js';
 
 export class ComponentManager {
   /** Optional callback: (component | null) => void. Registered by RayMenu. */
@@ -29,7 +30,8 @@ export class ComponentManager {
     // If it's a composite definition, expand it instead of creating a single component
     const def = componentRegistry[type];
     if (def && def.isComposite) {
-      const spawnPos = position || this.nextPosition;
+      const requestedSpawnPos = position || this.nextPosition;
+      const spawnPos = snapPoint(requestedSpawnPos.x, requestedSpawnPos.y);
       const externalParentId = this.currentId;
       this._expandComposite(def, spawnPos, externalParentId);
       return;
@@ -41,7 +43,8 @@ export class ComponentManager {
     // Set position (use provided or default).
     // (x, y) is now the world position of the component's centerPoint,
     // so no offset compensation is needed.
-    const pos = position || this.nextPosition;
+    const requestedPos = position || this.nextPosition;
+    const pos = snapPoint(requestedPos.x, requestedPos.y);
     component.setPosition(pos.x, pos.y);
     
     // Align new component's forward vector with the previously selected component's arrow vector

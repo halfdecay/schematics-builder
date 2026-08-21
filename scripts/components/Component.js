@@ -193,6 +193,9 @@ export class Component {
     if (this.element) {
       this._updateTransform(this.element);
     }
+    document.dispatchEvent(new CustomEvent('component:positionChanged', {
+      detail: { component: this }
+    }));
   }
 
   getPosition() {
@@ -331,25 +334,54 @@ export class Component {
       .replace(/\\ell\b/g, 'ℓ')
       .replace(/\\lambda\b/g, 'λ')
       .replace(/\\([A-Za-z]+)/g, '$1');
-    const parsed = math[1].match(/^(.*?)(?:\^\{([^}]*)\})?(?:_\{([^}]*)\})?$/);
-    if (!parsed) {
-      textElement.textContent = normalise(math[1]);
-      return;
-    }
-    const [, base, superscript, subscript] = parsed;
     const addSpan = (value, shift = null) => {
       if (!value) return;
       const span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
       span.textContent = normalise(value);
-      if (shift) {
+      if (shift === 'super' || shift === 'sub') {
         span.setAttribute('baseline-shift', shift);
         span.setAttribute('font-size', '70%');
+      } else {
+        span.setAttribute('baseline-shift', 'baseline');
       }
       textElement.appendChild(span);
     };
-    addSpan(base);
-    addSpan(superscript, 'super');
-    addSpan(subscript, 'sub');
+
+    // Accept both TeX-style _{x} and escaped \_{x}, and allow any number of
+    // superscript/subscript groups throughout the expression.
+    const expression = math[1].replace(/\\([_^])/g, '$1');
+    let plain = '';
+    const flushPlain = () => {
+      addSpan(plain);
+      plain = '';
+    };
+    for (let i = 0; i < expression.length; i++) {
+      const marker = expression[i];
+      if (marker !== '_' && marker !== '^') {
+        plain += marker;
+        continue;
+      }
+
+      let value = '';
+      if (expression[i + 1] === '{') {
+        const end = expression.indexOf('}', i + 2);
+        if (end === -1) {
+          plain += marker;
+          continue;
+        }
+        value = expression.slice(i + 2, end);
+        i = end;
+      } else if (i + 1 < expression.length) {
+        value = expression[++i];
+      } else {
+        plain += marker;
+        continue;
+      }
+
+      flushPlain();
+      addSpan(value, marker === '_' ? 'sub' : 'super');
+    }
+    flushPlain();
   }
 
   setArrowVector(x, y) {

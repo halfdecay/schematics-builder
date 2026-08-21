@@ -11,6 +11,10 @@ import { APERTURE_RADIUS_STEP, APERTURE_OFFSET_STEP, ARRAY_SIZE_RATIO_STEP, ARRA
          DEFAULT_SOLID_RAY_COLOR, DEFAULT_RAY_POLYGON_OPACITY, MIN_SCALE, MAX_SCALE,
          SCALE_SNAP_INCREMENT } from '../config.js';
 import { actionHistory } from '../history/ActionHistory.js';
+import { snapPoint } from '../GridSettings.js';
+import { showRotationHandle } from '../events/RotationHandle.js';
+import { showScaleHandle } from '../events/ScaleHandle.js';
+import { showArrowHandle } from '../events/ArrowHandle.js';
 
 /** Extract the 0-359 hue from either an HSL or 6-digit hex color string. */
 function _colorToHue(color) {
@@ -157,10 +161,17 @@ function buildPanelHTML(comp) {
   }).join('');
   const rotation = currentBaseComponent?.rotation ?? 0;
   const scale = currentBaseComponent?.scale ?? 1;
+  const position = currentBaseComponent?.getPosition?.() ?? { x: 0, y: 0 };
 
   const objectSection = `
     <div class="rp-section">
       <div class="rp-section-title">Object</div>
+      <div class="rp-field rp-coordinate-row">
+        <label class="rp-label" for="rp-position-x">X</label>
+        <input type="number" id="rp-position-x" class="rp-number" step="1" value="${position.x.toFixed(2)}">
+        <label class="rp-label" for="rp-position-y">Y</label>
+        <input type="number" id="rp-position-y" class="rp-number" step="1" value="${position.y.toFixed(2)}">
+      </div>
       <div class="rp-field">
         <label class="rp-label" for="rp-rotation">Rotation (deg)</label>
         <input type="number" id="rp-rotation" class="rp-number" step="1" value="${rotation.toFixed(2)}">
@@ -307,6 +318,67 @@ function wireEvents(body) {
     selectRayConnection(connection);
     body.innerHTML = buildPanelHTML(currentComponent);
     wireEvents(body);
+  });
+
+  const updateObjectPosition = () => {
+    if (!currentBaseComponent) return;
+    const xInput = get('rp-position-x');
+    const yInput = get('rp-position-y');
+    const requestedX = parseFloat(xInput?.value);
+    const requestedY = parseFloat(yInput?.value);
+    if (!Number.isFinite(requestedX) || !Number.isFinite(requestedY)) return;
+
+    const target = snapPoint(requestedX, requestedY);
+    const current = currentBaseComponent.getPosition();
+    const deltaX = target.x - current.x;
+    const deltaY = target.y - current.y;
+    beginControlHistory('Set object position', 'object-position');
+
+    if (componentManager.selectedIds.size > 1) {
+      componentManager.updateGroupPositions(componentManager.selectedIds, deltaX, deltaY);
+    } else {
+      const id = getComponentId(currentBaseComponent);
+      if (id != null) componentManager.updateComponentPosition(id, target.x, target.y);
+    }
+
+    const id = getComponentId(currentBaseComponent);
+    if (id != null) {
+      showRotationHandle(id);
+      showScaleHandle(id);
+      showArrowHandle(id);
+      componentManager.updateNextPositionFromComponent(id);
+    }
+    updateRays();
+    rebuildDebugForComponent(currentBaseComponent);
+  };
+
+  let positionSyncTimer = null;
+  const finishPositionEdit = () => {
+    if (positionSyncTimer !== null) {
+      clearTimeout(positionSyncTimer);
+      positionSyncTimer = null;
+    }
+    const position = currentBaseComponent?.getPosition();
+    if (position) {
+      get('rp-position-x').value = position.x.toFixed(2);
+      get('rp-position-y').value = position.y.toFixed(2);
+    }
+    commitControlHistory();
+  };
+
+  ['rp-position-x', 'rp-position-y'].forEach(id => {
+    get(id)?.addEventListener('input', () => {
+      updateObjectPosition();
+      clearTimeout(positionSyncTimer);
+      positionSyncTimer = setTimeout(finishPositionEdit, 300);
+    });
+    get(id)?.addEventListener('change', () => setTimeout(finishPositionEdit, 0));
+    get(id)?.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      updateObjectPosition();
+      setTimeout(finishPositionEdit, 0);
+      e.preventDefault();
+    });
   });
 
   get('rp-rotation')?.addEventListener('input', e => {
@@ -731,6 +803,15 @@ export function setupRayMenu() {
   if (!body) return;
 
   body.innerHTML = EMPTY_HTML;
+
+  document.addEventListener('component:positionChanged', event => {
+    if (event.detail?.component !== currentBaseComponent) return;
+    const position = currentBaseComponent.getPosition();
+    const xInput = body.querySelector('#rp-position-x');
+    const yInput = body.querySelector('#rp-position-y');
+    if (xInput && document.activeElement !== xInput) xInput.value = position.x.toFixed(2);
+    if (yInput && document.activeElement !== yInput) yInput.value = position.y.toFixed(2);
+  });
 
   ComponentManager.onSelectionChanged = (component) => {
     currentBaseComponent = component;
